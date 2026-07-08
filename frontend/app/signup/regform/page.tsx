@@ -3,13 +3,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function Regform() {
   const [password, setPassword] = useState<string>("");
+  const [savedEmail, setSavedEmail] = useState<string | null>(null);
 
-  const savedEmail: any = localStorage.getItem("signup_email");
-  const savedPassword: any = localStorage.setItem("signup_password", password);
+  useEffect(() => {
+    setSavedEmail(localStorage.getItem("signup_email"));
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("signup_password", password);
+  }, [password]);
 
   const router: any = useRouter();
 
@@ -44,7 +50,7 @@ export default function Regform() {
           <p className="mt-5">
             Just a few more steps and you're done! We hate paperwork, too.
           </p>
-          <input className="border border-gray-400 px-4 py-4 mt-4 rounded" defaultValue={savedEmail} type="email" placeholder="email@email.com" />
+          <input key={savedEmail} className="border border-gray-400 px-4 py-4 mt-4 rounded" defaultValue={savedEmail ?? ""} type="email" placeholder="email@email.com" />
           <input onChange={(e) => setPassword(e.target.value)} className="border border-gray-400 px-4 py-4 rounded mt-2" type="password" placeholder="Add a password" />
           <button
             onClick={navigateVerify}

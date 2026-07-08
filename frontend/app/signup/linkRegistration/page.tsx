@@ -3,9 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export default function LinkRegistration() {
-  const savedEmail = localStorage.getItem("signup_email");
+  const [savedEmail, setSavedEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSavedEmail(localStorage.getItem("signup_email"));
+  }, []);
 
   const router: any = useRouter();
 

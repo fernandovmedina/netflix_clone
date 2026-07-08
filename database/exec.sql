@@ -1,6 +1,6 @@
 -- =========================================
 -- Author: Fernando Vazquez
 -- Version: v1.0.0
--- Date: Dec 29, 2025
+-- Date: Jul 08, 2026
 -- DB: PostgreSQL (Supabase compatible)
 -- =========================================
