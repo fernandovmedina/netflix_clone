@@ -56,9 +56,9 @@ export default function Home() {
               <Image
                 src={item.imgSrc}
                 alt="carousel item"
-                width={220}
-                height={0}
-                className="rounded-xl hover:w-80"
+                width={197}
+                height={276}
+                className="h-auto w-[220px] rounded-xl hover:w-80"
               />
             </div>
           ))}
@@ -140,7 +140,7 @@ export default function Home() {
               className="flex flex-row items-center justify-between bg-gray-800 my-3 px-5 py-3 hover:bg-gray-700 hover:cursor-pointer"
             >
               <h1 className="font-bold text-2xl">{item.title}</h1>
-              <Image src="/home/more.png" alt="expand_icon" width={50} height={0} />
+              <Image src="/home/more.png" alt="expand_icon" width={50} height={50} className="h-auto" />
             </div>
             {openId === item.id && (
               <div className="bg-gray-800 -mt-2 px-2 py-2">
@@ -179,6 +179,7 @@ export default function Home() {
                   alt="netflix_logo"
                   width={150}
                   height={50}
+                  className="h-auto"
                 />
               </Link>
             </div>
@@ -188,7 +189,8 @@ export default function Home() {
                   src="/language.png"
                   alt="language_icon"
                   width={35}
-                  height={0}
+                  height={35}
+                  className="h-auto"
                 />
                 <select className="text-white pl-2 bg-transparent font-semibold">
                   <option>English</option>
@@ -229,8 +231,8 @@ export default function Home() {
                   src="/home/greater.png"
                   alt="greater_icon"
                   width={20}
-                  height={0}
-                  className="ml-2"
+                  height={20}
+                  className="ml-2 h-auto"
                 />
               </button>
             </div>
@@ -243,7 +245,8 @@ export default function Home() {
             src="/home/popcorn.png"
             alt="popcorn_image"
             width={70}
-            height={0}
+            height={70}
+            className="h-auto"
           />
 
           <div className="flex flex-row items-center justify-between bg-linear-to-r from-purple-900 via-purple-700 to-sky-900 w-full px-10 py-4 rounded-xl ml-5">
@@ -285,8 +288,8 @@ export default function Home() {
                 src="/home/greater.png"
                 alt="greater_icon"
                 width={20}
-                height={0}
-                className="ml-2"
+                height={20}
+                className="ml-2 h-auto"
               />
             </button>
           </div>
@@ -327,7 +330,8 @@ export default function Home() {
               src="/language.png"
               alt="language_icon"
               width={35}
-              height={0}
+              height={35}
+              className="h-auto"
             />
             <select className="text-white pl-2 bg-transparent font-semibold">
               <option>English</option>
