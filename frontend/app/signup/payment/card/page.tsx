@@ -96,7 +96,7 @@ export default function Card() {
             src="/netflix_logo.svg"
             alt="netflix_logo"
             width={160}
-            height={30}
+            height={43}
           />
         </Link>
         <Link href="/login" className="font-bold hover:underline text-xl">

@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/joho/godotenv"
 
-	"github.com/fernandovmedina/netflix-clone/microservices/auth/supabase"
+	"github.com/fernandovmedina/netflix-clone/microservices/auth/database"
 )
 
 func main() {
@@ -20,7 +20,7 @@ func main() {
 		return
 	}
 
-	if db, err = supabase.ConnDB(); err != nil {
+	if db, err = database.ConnDB(); err != nil {
 		log.Println(err.Error())
 		return
 	}

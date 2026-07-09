@@ -98,7 +98,8 @@ export const Navbar = () => {
             src="/netflix_logo.svg"
             alt="netflix_logo"
             width={100}
-            height={15}
+            height={27}
+            className="h-auto"
           />
         </a>
       </div>

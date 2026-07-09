@@ -79,7 +79,7 @@ export default function Login() {
               src="/netflix_logo.svg"
               alt="netflix_logo"
               width={150}
-              height={60}
+              height={41}
             />
           </Link>
         </nav>

@@ -43,7 +43,7 @@ export default function LoginHelp() {
       <div className="bg-[url(/home/hero_login.jpg)] bg-cover bg-center h-screen">
         <nav className="flex flex-row items-center justify-between text-white px-40 py-5 border-b border-gray-400">
           <Link href="/">
-            <Image src="/netflix_logo.svg" width={150} height={20} alt="netflix_logo" />
+            <Image src="/netflix_logo.svg" width={150} height={41} alt="netflix_logo" />
           </Link>
           <Link href="/login" className="bg-red-600 rounded px-5 py-2 font-bold hover:bg-red-700">Sign In</Link>
         </nav>

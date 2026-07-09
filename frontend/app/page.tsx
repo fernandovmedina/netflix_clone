@@ -178,7 +178,7 @@ export default function Home() {
                   src="/netflix_logo.svg"
                   alt="netflix_logo"
                   width={150}
-                  height={50}
+                  height={41}
                   className="h-auto"
                 />
               </Link>

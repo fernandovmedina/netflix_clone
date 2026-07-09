@@ -16,7 +16,7 @@ export default function ProfileSettings() {
           src="/netflix_logo.svg"
           alt="Netflix Logo"
           width={120}
-          height={10}
+          height={32}
         />
       </nav>
       <section className="flex flex-col mx-auto justify-center w-[800px]">
