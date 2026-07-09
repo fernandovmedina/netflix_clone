@@ -1,6 +1,7 @@
 "use client";
 
 import AlertMessage from "@/components/AlertMessage";
+import { login } from "@/utils/api/auth";
 import { createClient } from "@/utils/supabase/client";
 import Image from "next/image";
 import Link from "next/link";
@@ -23,14 +24,24 @@ export default function Login() {
   const handleSignIn = async (type: string) => {
     verifySignIn(type);
 
-    const supabase = createClient();
+    try {
+      // Login goes through the auth service (nginx load balancer), which
+      // creates the session via Supabase Auth.
+      const session = await login(email, password);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password,
-    });
+      // Hand the tokens to supabase-js so the session cookies the rest of
+      // the app relies on (layout redirect, middleware) stay in place.
+      const supabase = createClient();
+      const { error } = await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      });
 
-    if (error) {
+      if (error) {
+        setIsLoginError(true);
+        return;
+      }
+    } catch {
       setIsLoginError(true);
       return;
     }

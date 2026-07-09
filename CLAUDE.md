@@ -11,19 +11,24 @@ A full Netflix clone with frontend, backend microservices, load balancer middlew
 ## Architecture
 
 ```
-Browser (Next.js 16)
+Browser (Next.js 16, localhost:3000)
     │
-    ├── Next.js Middleware (load balancer)
-    │       • Validates Supabase session/JWT
-    │       • Routes authenticated requests to correct microservice
+    ▼
+nginx load balancer (localhost:8080) — /microservices/nginx/nginx.conf
+    │   least_conn across 5 auth containers, logs which upstream served
+    ▼
+Auth Microservice ×5 (Go) — /microservices/auth
+    │   • signup/login via Supabase Auth (GoTrue REST)
+    │   • verifies Supabase JWT locally (JWKS) on every request
+    │   • CORS allowlist (cors.go)
+    │   • proxies authenticated /api/v1/* to the owning service
     │
-    ├── Auth Microservice (Go)         — /microservices/auth
     ├── [future] Catalog Microservice  — titles, movies, series, episodes
     ├── [future] Streaming Microservice — HLS manifest serving
     └── [future] User Microservice     — watch progress, favorites
 ```
 
-Microservices are containerized via Docker. Orchestration file lives at `microservices/docker-compose.yaml` (currently minimal — only `version: "3"` defined, services TBD).
+The auth service is the single entry point / load balancer of the backend (per `docs/obsidian/backend/INSTRUCTIONS.md` — this supersedes the earlier plan to put the load balancer in Next.js middleware). Orchestration lives at `microservices/docker-compose.yaml`: 5 auth containers (`auth1`–`auth5`) behind nginx published on `localhost:8080`.
 
 ---
 
@@ -52,16 +57,24 @@ netflix_clone/
 │       ├── server.ts     # Server-side Supabase client
 │       └── middleware.ts # Next.js middleware — session handling + load balancer entry point
 ├── microservices/
-│   ├── docker-compose.yaml
-│   └── auth/            # Go microservice
-│       ├── main.go
+│   ├── docker-compose.yaml  # 5 auth containers + nginx LB on localhost:8080
+│   ├── nginx/
+│   │   └── nginx.conf   # upstream auth1..auth5, least_conn, upstream logging
+│   └── auth/            # Go microservice (see auth/CLAUDE.md + auth/README.md)
+│       ├── main.go       # HTTP server, routes
+│       ├── handlers.go   # signup/login/user handlers
+│       ├── middleware.go # requireAuth (JWT) + request logging
+│       ├── jwt.go        # Supabase JWT verification (JWKS, HS256 fallback)
+│       ├── cors.go       # manual origin allowlist (localhost:3000)
+│       ├── proxy.go      # route → microservice reverse proxy
 │       ├── go.mod        # module: github.com/fernandovmedina/netflix-clone/microservices/auth
-│       ├── Dockerfile
-│       └── supabase/
-│           ├── conndb.go    # pgx connection via DATABASE_URL
-│           ├── login.go     # (stub)
-│           ├── signup.go    # (stub)
-│           └── getSession.go # (stub)
+│       ├── Dockerfile    # multi-stage build → alpine
+│       └── database/
+│           ├── conndb.go    # pgxpool via DATABASE_URL
+│           ├── gotrue.go    # Supabase Auth REST client + Session/User types
+│           ├── login.go     # password grant
+│           ├── signup.go    # signup with name in user metadata
+│           └── getSession.go # GET /auth/v1/user (revocation-aware)
 └── supabase/
     └── config.toml      # project_id = "netflix_clone", local API port 54321, DB port 54322
 ```
@@ -110,29 +123,28 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ### Auth flow
 1. Landing page (`/`) captures email → stores in `localStorage` as `signup_email` → pushes to `/signup/linkRegistration`
 2. Login page (`/login`) calls `supabase.auth.signInWithPassword` directly from the client, then redirects to `/home/browse`
-3. `frontend/utils/supabase/middleware.ts` wraps `createServerClient` and refreshes cookies — **this is where the load balancer logic will live**
+3. `frontend/utils/supabase/middleware.ts` wraps `createServerClient` and refreshes session cookies
 
 ---
 
-## Load Balancer (Planned — Next.js Middleware)
+## Load Balancer (nginx + auth service)
 
-The plan is to extend `frontend/utils/supabase/middleware.ts` (or a root `middleware.ts`) to:
-1. Validate the Supabase session JWT on every request
-2. Based on the route/path, proxy the request to the appropriate backend microservice (auth, catalog, streaming, user)
-3. Return 401 for unauthenticated access to protected routes
-
-This keeps the frontend as the single entry point and avoids exposing microservices directly.
+Per `docs/obsidian/backend/INSTRUCTIONS.md`, the backend load balancer is nginx in front of 5 auth-service containers (not Next.js middleware):
+1. nginx (`microservices/nginx/nginx.conf`) distributes requests (`least_conn`) across `auth1`–`auth5` and logs which upstream served each request
+2. Each auth container validates the Supabase session JWT (401 for unauthenticated access) and proxies `/api/v1/*` to the owning microservice, forwarding `X-User-Id`/`X-User-Email`
+3. To scale: add `authN` to `docker-compose.yaml` and register `server authN:8080;` in `nginx.conf`
 
 ---
 
 ## Auth Microservice (Go)
 
-- Module: `github.com/fernandovmedina/netflix-clone/microservices/auth`
-- Go version: 1.25.3
-- Dependencies: `pgx/v5` (PostgreSQL driver), `godotenv`
-- Reads `DATABASE_URL` from `.env.local`
-- `conndb.go` connects via `pgx.Connect` — **note:** currently defers `conn.Close` before returning, which closes the connection immediately (bug to fix)
-- `login.go`, `signup.go`, `getSession.go` are stubs
+- Module: `github.com/fernandovmedina/netflix-clone/microservices/auth` — full docs in `microservices/auth/README.md`
+- Go version: 1.25.x
+- Dependencies: `pgx/v5` (pgxpool), `godotenv`, `golang-jwt/jwt/v5`, `MicahParks/keyfunc/v3` (JWKS)
+- Env (`.env.local`, git-ignored): `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`; optional `SUPABASE_JWT_SECRET` (legacy HS256), `PORT`, `CATALOG_SERVICE_URL`, `STREAMING_SERVICE_URL`, `USER_SERVICE_URL`
+- Endpoints: `GET /health`, `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`, `GET /api/v1/auth/user` (returns `{name, email, token}`), plus authenticated reverse proxy for all other `/api/v1/*` routes
+- Signup/login call the Supabase Auth (GoTrue) REST API so tokens are identical to the ones supabase-js issues to the frontend; JWTs are verified locally against the project JWKS
+- Every request logs the serving container: `[auth3] GET /api/v1/... -> 200`
 
 ---
 
@@ -154,9 +166,13 @@ supabase start
 
 ### Auth microservice
 ```bash
+# single instance (reads microservices/auth/.env.local)
 cd microservices/auth
-# create .env.local with DATABASE_URL
-go run main.go
+go run .
+
+# load-balanced stack: 5 containers + nginx on http://localhost:8080
+cd microservices
+docker compose up -d --build
 ```
 
 ---
@@ -169,15 +185,13 @@ go run main.go
 - Supabase auth integration (client-side sign-in)
 - Home/browse page (carousels, title detail modal with episodes list)
 - Full PostgreSQL schema
-- Auth microservice skeleton (DB connection)
+- Auth microservice: HTTP server, signup/login/user endpoints (Supabase Auth), JWT middleware (JWKS), CORS allowlist, reverse proxy to future services
+- nginx load balancer + docker-compose (5 auth containers, `localhost:8080`)
 - Supabase middleware cookie handler
 
 ### Planned / In Progress
-- Load balancer logic in Next.js middleware
-- Auth microservice: login, signup, getSession handlers + HTTP server
-- Catalog microservice (list titles, movies, series, episodes)
-- Streaming microservice (HLS manifest serving)
-- User microservice (watch progress, favorites)
-- Docker Compose service definitions
+- Frontend: point API calls at the load balancer (`http://localhost:8080`) with the Supabase access token as Bearer
+- Catalog microservice (list titles, movies, series, episodes) → set `CATALOG_SERVICE_URL`
+- Streaming microservice (HLS manifest serving) → set `STREAMING_SERVICE_URL`
+- User microservice (watch progress, favorites) → set `USER_SERVICE_URL`
 - Sign-up multi-step flow completion (plan selection, payment, profile)
-- `/home/browse` route (currently `/home/page.tsx`)

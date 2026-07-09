@@ -1,0 +1,5 @@
+# Credentials are injected by docker-compose (env_file), never baked into
+# the image.
+.env.local
+.env*
+README.md

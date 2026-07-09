@@ -1,5 +1,7 @@
 "use client";
 
+import AlertMessage from "@/components/AlertMessage";
+import { signup } from "@/utils/api/auth";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -7,19 +9,34 @@ import { useEffect, useState } from "react";
 
 export default function Regform() {
   const [password, setPassword] = useState<string>("");
-  const [savedEmail, setSavedEmail] = useState<string | null>(null);
+  const [email, setEmail] = useState<string>("");
+  const [signupAlert, setSignupAlert] = useState<string>("");
+  const [isSignupError, setIsSignupError] = useState<boolean>(false);
 
   useEffect(() => {
-    setSavedEmail(localStorage.getItem("signup_email"));
+    setEmail(localStorage.getItem("signup_email") ?? "");
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem("signup_password", password);
-  }, [password]);
 
   const router: any = useRouter();
 
-  const navigateVerify = () => {
+  const handleSignup = async () => {
+    if (email === "" || password === "") {
+      setSignupAlert("Please enter your email and a password.");
+      setIsSignupError(true);
+      return;
+    }
+
+    try {
+      // Creates the account through the auth service (nginx load balancer);
+      // Supabase then sends the confirmation email the next step refers to.
+      await signup("", email, password);
+    } catch (error) {
+      setSignupAlert(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      setIsSignupError(true);
+      return;
+    }
+
+    localStorage.setItem("signup_email", email);
     router.push("/signup/verifyEmail");
   }
 
@@ -50,10 +67,15 @@ export default function Regform() {
           <p className="mt-5">
             Just a few more steps and you're done! We hate paperwork, too.
           </p>
-          <input key={savedEmail} className="border border-gray-400 px-4 py-4 mt-4 rounded" defaultValue={savedEmail ?? ""} type="email" placeholder="email@email.com" />
+          <AlertMessage
+            message={signupAlert}
+            isOpened={isSignupError}
+            onClose={() => setIsSignupError(false)}
+          />
+          <input onChange={(e) => setEmail(e.target.value)} value={email} className="border border-gray-400 px-4 py-4 mt-4 rounded" type="email" placeholder="email@email.com" />
           <input onChange={(e) => setPassword(e.target.value)} className="border border-gray-400 px-4 py-4 rounded mt-2" type="password" placeholder="Add a password" />
           <button
-            onClick={navigateVerify}
+            onClick={handleSignup}
             className="bg-red-600 hover:bg-red-400 text-white px-5 py-4 rounded mt-5 text-2xl font-extrabold"
           >
             Next
