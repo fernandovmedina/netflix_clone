@@ -1,0 +1,5 @@
+# Local configuration files
+.mcp.json
+
+# Local configuration directories
+.claude/

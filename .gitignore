@@ -41,3 +41,6 @@ next-env.d.ts
 
 # mcp
 .mcp.json
+
+# local configuration files and directories
+supabase/
