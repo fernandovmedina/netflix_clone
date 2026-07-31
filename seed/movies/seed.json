@@ -1,0 +1,104 @@
+{
+  "movies": [
+    {
+      "name": "Attack",
+      "year_released": 2022,
+      "description": "After a coordinated assault isolates a coastal city, a former rescue pilot leads a small team through enemy lines to restore its communications network.",
+      "genres": ["Action", "Thriller", "Drama"],
+      "cast": ["Ethan Cole", "Nadia Brooks", "Marcus Reid"],
+      "director": "Helen Ward",
+      "duration": 112,
+      "thumbnail_url": "movies/data/attack.jpg"
+    },
+    {
+      "name": "Creed",
+      "year_released": 2015,
+      "description": "A determined young boxer steps out of his family's shadow and trains with a retired champion for the fight that could define his own legacy.",
+      "genres": ["Sports", "Drama"],
+      "cast": ["Andre Mitchell", "Robert Hale", "Tessa Grant"],
+      "director": "Ryan Porter",
+      "duration": 133,
+      "thumbnail_url": "movies/data/creed.webp"
+    },
+    {
+      "name": "Fast and Furious",
+      "year_released": 2009,
+      "description": "A street racer and a federal agent form an uneasy alliance to stop a smuggling ring that rules the highways after dark.",
+      "genres": ["Action", "Crime", "Adventure"],
+      "cast": ["Dominic Stone", "Brian Walker", "Mia Torres"],
+      "director": "Justin Ray",
+      "duration": 107,
+      "thumbnail_url": "movies/data/fast_and_furious.webp"
+    },
+    {
+      "name": "Hell",
+      "year_released": 2020,
+      "description": "Stranded beneath an abandoned mountain town, five explorers must escape a maze that seems to reshape itself around their deepest fears.",
+      "genres": ["Horror", "Mystery", "Thriller"],
+      "cast": ["Clara West", "Noah Price", "Elena Moore"],
+      "director": "Samuel Cross",
+      "duration": 101,
+      "thumbnail_url": "movies/data/hell.webp"
+    },
+    {
+      "name": "The Karate Kid",
+      "year_released": 2010,
+      "description": "A teenager in an unfamiliar city finds confidence and discipline under the guidance of a quiet martial arts master.",
+      "genres": ["Family", "Drama", "Martial Arts"],
+      "cast": ["Jayden Parker", "Mei Lin", "Han Wu"],
+      "director": "Harold Bennett",
+      "duration": 140,
+      "thumbnail_url": "movies/data/karate_kid.webp"
+    },
+    {
+      "name": "Like Children",
+      "year_released": 2021,
+      "description": "Three lifelong friends reunite for a summer road trip and discover that growing older has not made any of them better at growing up.",
+      "genres": ["Comedy", "Drama", "Road Movie"],
+      "cast": ["Sophie Lane", "Ben Carter", "Luis Moreno"],
+      "director": "Amelia Foster",
+      "duration": 98,
+      "thumbnail_url": "movies/data/like_children.webp"
+    },
+    {
+      "name": "Norbit",
+      "year_released": 2007,
+      "description": "A timid man trapped in an unhappy relationship finds the courage to change his life when a childhood friend returns to town.",
+      "genres": ["Comedy", "Romance"],
+      "cast": ["Eddie Morris", "Thandi Lewis", "Cuba Bennett"],
+      "director": "Brian Robbins",
+      "duration": 102,
+      "thumbnail_url": "movies/data/norbit.webp"
+    },
+    {
+      "name": "Scarface",
+      "year_released": 1983,
+      "description": "An ambitious outsider builds a criminal empire in Miami, only to watch power and paranoia destroy everything he fought to gain.",
+      "genres": ["Crime", "Drama", "Thriller"],
+      "cast": ["Antonio Montana", "Elena Rivera", "Manuel Diaz"],
+      "director": "Brian De Palma",
+      "duration": 170,
+      "thumbnail_url": "movies/data/scarface.webp"
+    },
+    {
+      "name": "Spider-Man",
+      "year_released": 2002,
+      "description": "A shy student gains extraordinary abilities and learns that every gift carries a responsibility to protect others.",
+      "genres": ["Superhero", "Action", "Adventure"],
+      "cast": ["Peter Turner", "Mary Watson", "Norman Osborne"],
+      "director": "Samuel Raimi",
+      "duration": 121,
+      "thumbnail_url": "movies/data/spiderman.webp"
+    },
+    {
+      "name": "War Machine",
+      "year_released": 2017,
+      "description": "A celebrated general arrives to command an unwinnable campaign and discovers that confidence cannot overcome politics, bureaucracy, and reality.",
+      "genres": ["Satire", "War", "Comedy"],
+      "cast": ["Glen McMahon", "Jeanie Brooks", "Sean Cullen"],
+      "director": "David Michod",
+      "duration": 122,
+      "thumbnail_url": "movies/data/war_machine.jpg"
+    }
+  ]
+}

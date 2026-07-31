@@ -1,9 +1,302 @@
 {
   "series": [
     {
+      "name": "Baki",
+      "year_released": 2018,
+      "description": "A relentless young fighter enters an underground arena where strength, instinct, and survival matter more than rules.",
+      "genres": ["Action", "Martial Arts", "Anime"],
+      "cast": ["Kenji Arai", "Mika Sato", "Daichi Mori"],
+      "thumbnail_url": "series/data/baki/baki.jpg",
+      "number_of_seasons": 2,
+      "seasons": [
+        {
+          "season_number": 1,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "The Underground Gate", "description": "Baki accepts an invitation to a secret arena and discovers that every opponent has something to prove.", "duration": 24 },
+            { "episode_number": 2, "title": "No Rules Tonight", "description": "A street fighter challenges the arena hierarchy while Baki studies a dangerous new technique.", "duration": 25 },
+            { "episode_number": 3, "title": "The Weight of Strength", "description": "Baki must decide how far he will go when victory puts another fighter's future at risk.", "duration": 24 }
+          ]
+        },
+        {
+          "season_number": 2,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "A Worthy Rival", "description": "An undefeated champion arrives in Tokyo looking for the only fighter who might stop him.", "duration": 25 },
+            { "episode_number": 2, "title": "Breaking Point", "description": "An injury forces Baki to rely on timing and patience instead of raw power.", "duration": 24 },
+            { "episode_number": 3, "title": "The Final Bell", "description": "The arena falls silent as Baki faces his rival in a battle that changes them both.", "duration": 26 }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Baki Hanma",
-      "year_released": "2020",
-      "number_of_seasons": "3"
+      "year_released": 2021,
+      "description": "Determined to surpass his legendary father, Baki seeks increasingly impossible opponents and tests the limits of human power.",
+      "genres": ["Action", "Martial Arts", "Anime"],
+      "cast": ["Riku Tanaka", "Haruto Kondo", "Emi Watanabe"],
+      "thumbnail_url": "series/data/baki_hanma/baki_hanma.jpg",
+      "number_of_seasons": 2,
+      "seasons": [
+        {
+          "season_number": 1,
+          "number_of_episodes": 4,
+          "episodes": [
+            { "episode_number": 1, "title": "The Strongest Student", "description": "News of an impossible victory spreads as Baki begins preparing for the fight of his life.", "duration": 25 },
+            { "episode_number": 2, "title": "Mixed Blood", "description": "A versatile challenger exposes the weaknesses hidden inside Baki's confident style.", "duration": 24 },
+            { "episode_number": 3, "title": "The Prison Champion", "description": "Baki enters a fortress-like prison to meet a man whose fists command absolute respect.", "duration": 26 },
+            { "episode_number": 4, "title": "Unchained", "description": "The prison walls become a battlefield when its champion finally accepts Baki's challenge.", "duration": 25 }
+          ]
+        },
+        {
+          "season_number": 2,
+          "number_of_episodes": 4,
+          "episodes": [
+            { "episode_number": 1, "title": "Ancient Power", "description": "A discovery from another age introduces a fighter untouched by modern combat.", "duration": 24 },
+            { "episode_number": 2, "title": "Weapons of the Present", "description": "Baki's allies combine their skills against an opponent who sees every strike as a curiosity.", "duration": 25 },
+            { "episode_number": 3, "title": "Father and Son", "description": "A quiet dinner between Baki and his father carries the tension of an approaching war.", "duration": 27 },
+            { "episode_number": 4, "title": "Beyond Victory", "description": "The long-awaited confrontation reveals that recognition may matter more than defeat.", "duration": 28 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Better Call Saul",
+      "year_released": 2015,
+      "description": "A resourceful small-time lawyer bends rules, tests loyalties, and slowly transforms into the legal fixer everyone will remember.",
+      "genres": ["Crime", "Drama", "Dark Comedy"],
+      "cast": ["Daniel Mercer", "Laura Bennett", "Victor Hale"],
+      "thumbnail_url": "series/data/better_call_saul/better_call_saul.jpg",
+      "number_of_seasons": 2,
+      "seasons": [
+        {
+          "season_number": 1,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "Public Defender", "description": "Jimmy takes a hopeless case and discovers a shortcut that could rescue his struggling practice.", "duration": 48 },
+            { "episode_number": 2, "title": "The Billboard", "description": "A publicity stunt spins out of control and brings Jimmy the attention he wanted for all the wrong reasons.", "duration": 46 },
+            { "episode_number": 3, "title": "Fine Print", "description": "A promising client forces Jimmy to choose between an easy fee and a difficult truth.", "duration": 50 }
+          ]
+        },
+        {
+          "season_number": 2,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "A Better Office", "description": "A prestigious job offers Jimmy stability, but its rules quickly become another kind of cage.", "duration": 47 },
+            { "episode_number": 2, "title": "The Favor", "description": "Mike agrees to a simple favor that draws him deeper into Albuquerque's criminal world.", "duration": 49 },
+            { "episode_number": 3, "title": "Switch", "description": "Jimmy embraces a risky identity after a professional betrayal closes every respectable door.", "duration": 51 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Breaking Bad",
+      "year_released": 2008,
+      "description": "A chemistry teacher with nothing left to lose builds a criminal enterprise and discovers how quickly power changes a person.",
+      "genres": ["Crime", "Drama", "Thriller"],
+      "cast": ["Walter Grant", "Aaron Mills", "Anna Crawford"],
+      "thumbnail_url": "series/data/breaking_bad/breaking_bad.webp",
+      "number_of_seasons": 3,
+      "seasons": [
+        {
+          "season_number": 1,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "Catalyst", "description": "A devastating diagnosis pushes a quiet teacher toward a dangerous partnership with a former student.", "duration": 52 },
+            { "episode_number": 2, "title": "The Formula", "description": "Their first product attracts attention, and an unexpected visitor threatens to expose everything.", "duration": 48 },
+            { "episode_number": 3, "title": "No Half Measures", "description": "Walter makes a choice that cannot be undone while his family notices his growing distance.", "duration": 50 }
+          ]
+        },
+        {
+          "season_number": 2,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "Expansion", "description": "Demand grows faster than the operation, forcing Walter and Jesse to recruit unreliable help.", "duration": 47 },
+            { "episode_number": 2, "title": "The Distributor", "description": "A careful businessman offers security at a price Walter may be too proud to pay.", "duration": 49 },
+            { "episode_number": 3, "title": "Collision Course", "description": "Two investigations close in as Walter's double life begins to fracture at home.", "duration": 51 }
+          ]
+        },
+        {
+          "season_number": 3,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "The New Lab", "description": "Walter enters a state-of-the-art laboratory and meets a partner who mirrors his ambition.", "duration": 50 },
+            { "episode_number": 2, "title": "Pressure", "description": "Jesse's impulsive plan threatens the fragile peace between the cooks and their employer.", "duration": 48 },
+            { "episode_number": 3, "title": "Kingdom", "description": "Walter secures his position through one final calculation, but victory leaves him isolated.", "duration": 54 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Death Note",
+      "year_released": 2006,
+      "description": "A brilliant student finds a supernatural notebook and begins a deadly contest of logic with an equally gifted detective.",
+      "genres": ["Mystery", "Psychological Thriller", "Anime"],
+      "cast": ["Akira Ito", "Ren Kobayashi", "Yuna Shimizu"],
+      "thumbnail_url": "series/data/death_note/death_note.webp",
+      "number_of_seasons": 1,
+      "seasons": [
+        {
+          "season_number": 1,
+          "number_of_episodes": 5,
+          "episodes": [
+            { "episode_number": 1, "title": "The Notebook", "description": "Light discovers that a mysterious notebook can kill and decides to reshape the world in his image.", "duration": 23 },
+            { "episode_number": 2, "title": "The Detective", "description": "An anonymous detective sets a televised trap and proves that the killer can be challenged.", "duration": 24 },
+            { "episode_number": 3, "title": "False Names", "description": "Light hides behind careful rules while investigators search for a pattern in the deaths.", "duration": 23 },
+            { "episode_number": 4, "title": "Second Shadow", "description": "A new notebook owner appears, complicating Light's plan and attracting dangerous attention.", "duration": 24 },
+            { "episode_number": 5, "title": "Checkmate", "description": "The battle of deduction reaches its breaking point as both rivals risk everything on one final move.", "duration": 25 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Hajime no Ippo",
+      "year_released": 2000,
+      "description": "A shy student discovers boxing and learns that courage is built through discipline, friendship, and one hard round at a time.",
+      "genres": ["Sports", "Drama", "Anime"],
+      "cast": ["Sota Nakamura", "Kaito Fujii", "Mei Hayashi"],
+      "thumbnail_url": "series/data/hajime_no_ippo/hajime_no_ippo.webp",
+      "number_of_seasons": 2,
+      "seasons": [
+        {
+          "season_number": 1,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "First Round", "description": "Ippo steps into a boxing gym for the first time and surprises everyone with the force of his punch.", "duration": 24 },
+            { "episode_number": 2, "title": "Roadwork", "description": "A punishing training routine teaches Ippo that endurance begins long before the bell rings.", "duration": 23 },
+            { "episode_number": 3, "title": "The Debut", "description": "Nerves and an aggressive opponent test Ippo during his first official match.", "duration": 25 }
+          ]
+        },
+        {
+          "season_number": 2,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "Rising Rank", "description": "A string of victories places Ippo on the path toward a regional title.", "duration": 24 },
+            { "episode_number": 2, "title": "The Counter", "description": "Ippo faces a technical boxer whose perfect counter neutralizes his strongest weapon.", "duration": 25 },
+            { "episode_number": 3, "title": "Champion's Heart", "description": "In the final round, Ippo must find strength after his body has nothing left to give.", "duration": 26 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "How to Sell Drugs Online (Fast)",
+      "year_released": 2019,
+      "description": "A socially awkward teenager launches an online drug store and learns that rapid growth creates even faster consequences.",
+      "genres": ["Comedy", "Crime", "Teen Drama"],
+      "cast": ["Max Berger", "Lena Vogel", "Jonas Klein"],
+      "thumbnail_url": "series/data/how_to_sell_drugs_online/how_to_sell_drugs_online.jpg",
+      "number_of_seasons": 2,
+      "seasons": [
+        {
+          "season_number": 1,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "Start-Up", "description": "Moritz turns heartbreak into a business plan and recruits his best friend as reluctant technical support.", "duration": 30 },
+            { "episode_number": 2, "title": "User Growth", "description": "A marketing stunt brings hundreds of customers and the attention of a local dealer.", "duration": 29 },
+            { "episode_number": 3, "title": "Out of Stock", "description": "The team scrambles to fill orders while a school event threatens to reveal their secret operation.", "duration": 31 }
+          ]
+        },
+        {
+          "season_number": 2,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "Going Global", "description": "International demand transforms a bedroom project into a business none of them can control.", "duration": 30 },
+            { "episode_number": 2, "title": "Terms of Service", "description": "A new investor demands loyalty while the friends argue over who really owns the company.", "duration": 32 },
+            { "episode_number": 3, "title": "Delete Account", "description": "Moritz attempts to erase the platform before rivals, police, and friends close in.", "duration": 33 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pablo Escobar: The Shadow King",
+      "year_released": 2017,
+      "description": "An ambitious smuggler builds a violent empire while journalists and investigators risk their lives to expose it.",
+      "genres": ["Crime", "Historical Drama", "Thriller"],
+      "cast": ["Mateo Rojas", "Isabella Cruz", "Andres Vega"],
+      "thumbnail_url": "series/data/pablo_escobar/pablo_escobar.webp",
+      "number_of_seasons": 2,
+      "seasons": [
+        {
+          "season_number": 1,
+          "number_of_episodes": 4,
+          "episodes": [
+            { "episode_number": 1, "title": "The Smuggler", "description": "Pablo turns a small contraband route into a network that crosses borders and buys silence.", "duration": 46 },
+            { "episode_number": 2, "title": "Silver", "description": "Bribes open doors across Medellin, but one honest officer refuses to step aside.", "duration": 48 },
+            { "episode_number": 3, "title": "Lead", "description": "A failed negotiation unleashes violence and forces the government to respond.", "duration": 47 },
+            { "episode_number": 4, "title": "The Candidate", "description": "Pablo seeks political legitimacy while a reporter gathers evidence of his past.", "duration": 50 }
+          ]
+        },
+        {
+          "season_number": 2,
+          "number_of_episodes": 4,
+          "episodes": [
+            { "episode_number": 1, "title": "Extradition", "description": "A new treaty threatens the cartel and turns Pablo's private war into a national crisis.", "duration": 49 },
+            { "episode_number": 2, "title": "The Search Bloc", "description": "A specialized unit follows a fragile trail through safe houses and frightened informants.", "duration": 48 },
+            { "episode_number": 3, "title": "No Safe City", "description": "As allies disappear, Pablo retreats deeper into the empire he created.", "duration": 51 },
+            { "episode_number": 4, "title": "The Last Rooftop", "description": "The search ends in Medellin, leaving a country to confront the cost of the cartel years.", "duration": 53 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sex Education",
+      "year_released": 2019,
+      "description": "An anxious student and his fearless friend create an unofficial advice clinic for classmates navigating love, identity, and growing up.",
+      "genres": ["Comedy", "Drama", "Coming-of-Age"],
+      "cast": ["Oliver Hart", "Maya Collins", "Ruby Ellis"],
+      "thumbnail_url": "series/data/sex_education/sex_education.jpg",
+      "number_of_seasons": 3,
+      "seasons": [
+        {
+          "season_number": 1,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "The Clinic", "description": "Otis accidentally gives useful advice and Maeve sees the beginning of a profitable partnership.", "duration": 47 },
+            { "episode_number": 2, "title": "Mixed Signals", "description": "Their first clients need more than quick answers, while Otis struggles to follow his own advice.", "duration": 45 },
+            { "episode_number": 3, "title": "Open Secret", "description": "Rumors about the clinic spread through school and place an unexpected friendship under pressure.", "duration": 49 }
+          ]
+        },
+        {
+          "season_number": 2,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "New Term", "description": "A new semester brings new relationships, old insecurities, and competition for the clinic.", "duration": 48 },
+            { "episode_number": 2, "title": "Honest Answers", "description": "A school-wide panic forces students to confront misinformation and ask better questions.", "duration": 46 },
+            { "episode_number": 3, "title": "The Message", "description": "One unheard voicemail changes the course of Otis and Maeve's friendship.", "duration": 50 }
+          ]
+        },
+        {
+          "season_number": 3,
+          "number_of_episodes": 3,
+          "episodes": [
+            { "episode_number": 1, "title": "Uniform", "description": "A strict headteacher promises order at Moordale and immediately clashes with its students.", "duration": 49 },
+            { "episode_number": 2, "title": "Untold Stories", "description": "The friends discover how much they have hidden from one another during a difficult school trip.", "duration": 47 },
+            { "episode_number": 3, "title": "Growing Apart", "description": "As Moordale faces closure, its students choose what to preserve and what to leave behind.", "duration": 52 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "The Cage",
+      "year_released": 2024,
+      "description": "A gifted amateur fighter enters the brutal world of professional mixed martial arts and risks everything for a championship chance.",
+      "genres": ["Sports", "Drama", "Action"],
+      "cast": ["Theo Laurent", "Camille Moreau", "Malik Benali"],
+      "thumbnail_url": "series/data/the_cage/the_cage.jpg",
+      "number_of_seasons": 1,
+      "seasons": [
+        {
+          "season_number": 1,
+          "number_of_episodes": 5,
+          "episodes": [
+            { "episode_number": 1, "title": "The Open Mat", "description": "Taylor interrupts a champion's training session and earns a painful chance to prove himself.", "duration": 42 },
+            { "episode_number": 2, "title": "Fight Camp", "description": "A veteran coach rebuilds Taylor's technique while financial pressure follows him into the gym.", "duration": 44 },
+            { "episode_number": 3, "title": "First Contract", "description": "Taylor signs for a dangerous short-notice bout against an opponent with everything to lose.", "duration": 43 },
+            { "episode_number": 4, "title": "Cut Weight", "description": "The hardest battle happens before the fight as Taylor pushes his body past a safe limit.", "duration": 45 },
+            { "episode_number": 5, "title": "Center of the Cage", "description": "Under the brightest lights of his career, Taylor must trust the team that carried him there.", "duration": 47 }
+          ]
+        }
+      ]
     }
   ]
 }
