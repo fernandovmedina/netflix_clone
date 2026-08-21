@@ -6,47 +6,61 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/fernandovmedina/netflix-clone/microservices/shared/jwtutil"
 )
 
 type contextKey string
 
 const (
 	claimsKey contextKey = "claims"
-	tokenKey  contextKey = "token"
 )
 
-// requireAuth rejects requests that do not carry a valid Supabase access
-// token in the Authorization header, and stores the verified claims in the
+// requireAuth verifies the access token and stores its signed claims in the
 // request context for handlers and the proxy.
-func requireAuth(next http.Handler) http.Handler {
+func (app *application) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || token == "" {
-			writeError(w, http.StatusUnauthorized, "missing bearer token: the user is not logged in")
+		token := accessTokenFrom(r)
+		if token == "" {
+			app.error(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 
-		claims, err := verifyToken(token)
+		claims, err := app.tokens.verify(token)
 		if err != nil {
 			log.Printf("[%s] rejected token for %s %s: %v", hostname, r.Method, r.URL.Path, err)
-			writeError(w, http.StatusUnauthorized, "invalid or expired session: the user is not logged in")
+			app.error(w, http.StatusUnauthorized, "invalid or expired access token")
 			return
 		}
 
 		ctx := context.WithValue(r.Context(), claimsKey, claims)
-		ctx = context.WithValue(ctx, tokenKey, token)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-func claimsFrom(r *http.Request) *SupabaseClaims {
-	claims, _ := r.Context().Value(claimsKey).(*SupabaseClaims)
+func (app *application) requireAdmin(next http.Handler) http.Handler {
+	return app.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if claimsFrom(r).Role != "admin" {
+			app.error(w, http.StatusForbidden, "administrator access required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
+func claimsFrom(r *http.Request) *jwtutil.Claims {
+	claims, _ := r.Context().Value(claimsKey).(*jwtutil.Claims)
 	return claims
 }
 
-func tokenFrom(r *http.Request) string {
-	token, _ := r.Context().Value(tokenKey).(string)
-	return token
+func accessTokenFrom(r *http.Request) string {
+	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && token != "" {
+		return token
+	}
+	if cookie, err := r.Cookie("access_token"); err == nil {
+		return cookie.Value
+	}
+	return ""
 }
 
 // statusRecorder captures the status code a handler writes so the request

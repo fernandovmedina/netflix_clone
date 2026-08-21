@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/fernandovmedina/netflix-clone/microservices/shared/authctx"
 )
 
 // serviceRoutes maps API path prefixes to the microservice that owns them.
@@ -17,6 +19,7 @@ var serviceRoutes = []struct {
 	service string
 	envVar  string
 }{
+	{"/api/v1/admin", "catalog", "CATALOG_SERVICE_URL"},
 	{"/api/v1/titles", "catalog", "CATALOG_SERVICE_URL"},
 	{"/api/v1/movies", "catalog", "CATALOG_SERVICE_URL"},
 	{"/api/v1/movie", "catalog", "CATALOG_SERVICE_URL"},
@@ -31,12 +34,16 @@ var serviceRoutes = []struct {
 	{"/api/v1/progress", "user", "USER_SERVICE_URL"},
 	{"/api/v1/favorites", "user", "USER_SERVICE_URL"},
 	{"/api/v1/profiles", "user", "USER_SERVICE_URL"},
+	{"/api/v1/plans", "user", "USER_SERVICE_URL"},
+	{"/api/v1/discounts", "user", "USER_SERVICE_URL"},
+	{"/api/v1/payments", "user", "USER_SERVICE_URL"},
+	{"/api/v1/home", "catalog", "CATALOG_SERVICE_URL"},
 }
 
 // handleProxy forwards an already-authenticated request to the microservice
 // that owns the route. The verified user id and email travel along in headers
 // so downstream services do not have to re-parse the JWT.
-func handleProxy(w http.ResponseWriter, r *http.Request) {
+func (app *application) handleProxy(w http.ResponseWriter, r *http.Request) {
 	for _, route := range serviceRoutes {
 		if r.URL.Path != route.prefix && !strings.HasPrefix(r.URL.Path, route.prefix+"/") {
 			continue
@@ -46,14 +53,14 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 		if rawURL == "" {
 			log.Printf("[%s] no target for %s %s: %s service not configured (%s)",
 				hostname, r.Method, r.URL.Path, route.service, route.envVar)
-			writeError(w, http.StatusServiceUnavailable, route.service+" service is not available yet")
+			app.error(w, http.StatusServiceUnavailable, route.service+" service is not available yet")
 			return
 		}
 
 		target, err := url.Parse(rawURL)
 		if err != nil {
 			log.Printf("[%s] invalid %s: %v", hostname, route.envVar, err)
-			writeError(w, http.StatusInternalServerError, "invalid "+route.service+" service address")
+			app.error(w, http.StatusInternalServerError, "invalid "+route.service+" service address")
 			return
 		}
 
@@ -62,16 +69,18 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 			hostname, claims.Email, r.Method, r.URL.Path, route.service, target)
 
 		proxy := httputil.NewSingleHostReverseProxy(target)
+		if app.proxyTransport != nil {
+			proxy.Transport = app.proxyTransport
+		}
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("[%s] proxy to %s service failed: %v", hostname, route.service, err)
-			writeError(w, http.StatusBadGateway, route.service+" service did not respond")
+			app.error(w, http.StatusBadGateway, route.service+" service did not respond")
 		}
 
-		r.Header.Set("X-User-Id", claims.Subject)
-		r.Header.Set("X-User-Email", claims.Email)
+		authctx.Inject(r, authctx.User{ID: claims.Subject, Email: claims.Email, Role: claims.Role})
 		proxy.ServeHTTP(w, r)
 		return
 	}
 
-	writeError(w, http.StatusNotFound, "no service owns this route")
+	app.error(w, http.StatusNotFound, "no service owns this route")
 }

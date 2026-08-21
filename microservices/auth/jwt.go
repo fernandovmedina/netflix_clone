@@ -1,79 +1,38 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
+	"time"
 
-	"github.com/MicahParks/keyfunc/v3"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/fernandovmedina/netflix-clone/microservices/shared/jwtutil"
+	"github.com/google/uuid"
 )
 
-// SupabaseClaims are the claims Supabase Auth embeds in every access token.
-type SupabaseClaims struct {
-	jwt.RegisteredClaims
-	Email        string         `json:"email"`
-	Role         string         `json:"role"`
-	UserMetadata map[string]any `json:"user_metadata"`
+type tokenManager struct {
+	secret    []byte
+	accessTTL time.Duration
 }
 
-// Name returns the display name stored in the token's user metadata.
-func (c *SupabaseClaims) Name() string {
-	if name, ok := c.UserMetadata["name"].(string); ok {
-		return name
+func newTokenManager() (*tokenManager, error) {
+	secret := []byte(os.Getenv("JWT_SECRET"))
+	if len(secret) < 32 {
+		return nil, fmt.Errorf("JWT_SECRET must be at least 32 bytes")
 	}
-	return ""
+	ttl := 15 * time.Minute
+	if value := os.Getenv("ACCESS_TOKEN_TTL"); value != "" {
+		parsed, err := time.ParseDuration(value)
+		if err != nil {
+			return nil, fmt.Errorf("ACCESS_TOKEN_TTL: %w", err)
+		}
+		ttl = parsed
+	}
+	return &tokenManager{secret: secret, accessTTL: ttl}, nil
 }
 
-var (
-	jwtKeyfunc  jwt.Keyfunc
-	jwtMethods  []string
-	jwksCleanup func()
-)
-
-// initJWT prepares local verification of Supabase access tokens. Projects on
-// asymmetric signing keys (the current Supabase default) are verified against
-// the project's JWKS endpoint; legacy projects can set SUPABASE_JWT_SECRET to
-// verify with the shared HS256 secret instead.
-func initJWT() error {
-	if secret := os.Getenv("SUPABASE_JWT_SECRET"); secret != "" {
-		jwtKeyfunc = func(t *jwt.Token) (any, error) { return []byte(secret), nil }
-		jwtMethods = []string{"HS256"}
-		return nil
-	}
-
-	baseURL := os.Getenv("SUPABASE_URL")
-	if baseURL == "" {
-		return fmt.Errorf("SUPABASE_URL must be set to fetch the JWKS")
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	jwks, err := keyfunc.NewDefaultCtx(ctx, []string{baseURL + "/auth/v1/.well-known/jwks.json"})
-	if err != nil {
-		cancel()
-		return fmt.Errorf("fetching Supabase JWKS: %w", err)
-	}
-
-	jwtKeyfunc = jwks.Keyfunc
-	jwtMethods = []string{"ES256", "RS256"}
-	jwksCleanup = cancel
-	return nil
+func (m *tokenManager) sign(user User) (string, error) {
+	return jwtutil.Sign(m.secret, user.ID, user.Email, user.Role, time.Now(), m.accessTTL, uuid.NewString())
 }
-
-// verifyToken checks the signature, expiry and audience of a Supabase access
-// token and returns its claims.
-func verifyToken(tokenString string) (*SupabaseClaims, error) {
-	claims := &SupabaseClaims{}
-	_, err := jwt.ParseWithClaims(
-		tokenString,
-		claims,
-		jwtKeyfunc,
-		jwt.WithValidMethods(jwtMethods),
-		jwt.WithAudience("authenticated"),
-		jwt.WithExpirationRequired(),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return claims, nil
+func (m *tokenManager) verify(raw string) (*jwtutil.Claims, error) {
+	return jwtutil.Verify(m.secret, raw)
 }

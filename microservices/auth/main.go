@@ -5,15 +5,27 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
+	shareddb "github.com/fernandovmedina/netflix-clone/microservices/shared/database"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
-
-	"github.com/fernandovmedina/netflix-clone/microservices/auth/database"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // hostname identifies which container is serving a request in the logs.
 var hostname string
+
+type application struct {
+	pool           *pgxpool.Pool
+	repo           *repository
+	tokens         *tokenManager
+	cookieSecure   bool
+	dummyHash      []byte
+	httpClient     *http.Client
+	proxyTransport http.RoundTripper
+}
 
 func main() {
 	// Inside docker-compose the variables arrive through env_file, so a
@@ -24,33 +36,47 @@ func main() {
 
 	hostname, _ = os.Hostname()
 
-	if err := initJWT(); err != nil {
+	tokens, err := newTokenManager()
+	if err != nil {
 		log.Fatalf("[%s] jwt setup failed: %v", hostname, err)
 	}
-	if jwksCleanup != nil {
-		defer jwksCleanup()
-	}
 
-	// Direct Postgres pool. No endpoint queries it yet, but it is the
-	// connection future handlers (and health details) will use.
+	// Every replica uses the same database; no authentication state is local.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	pool, err := database.ConnDB(ctx)
+	pool, err := shareddb.Open(ctx)
 	cancel()
 	if err != nil {
-		log.Printf("[%s] warning: could not connect to Supabase Postgres: %v", hostname, err)
-	} else {
-		defer pool.Close()
-		log.Printf("[%s] connected to Supabase Postgres", hostname)
+		log.Fatalf("[%s] could not connect to Postgres: %v", hostname, err)
 	}
+	defer pool.Close()
+	repo, err := newRepository(pool, tokens)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cookieSecure, err := strconv.ParseBool(getenv("COOKIE_SECURE", "false"))
+	if err != nil {
+		log.Fatalf("COOKIE_SECURE must be true or false: %v", err)
+	}
+	dummyHash, err := bcrypt.GenerateFromPassword([]byte("constant-time-dummy-password"), 12)
+	if err != nil {
+		log.Fatal(err)
+	}
+	app := &application{pool: pool, repo: repo, tokens: tokens, cookieSecure: cookieSecure, dummyHash: dummyHash, httpClient: &http.Client{Timeout: 10 * time.Second}, proxyTransport: http.DefaultTransport}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
-	mux.HandleFunc("POST /api/v1/auth/signup", handleSignup)
-	mux.HandleFunc("POST /api/v1/auth/login", handleLogin)
-	mux.Handle("GET /api/v1/auth/user", requireAuth(http.HandlerFunc(handleUser)))
+	mux.HandleFunc("POST /api/v1/auth/signup", app.handleSignup)
+	mux.HandleFunc("POST /api/v1/auth/login", app.handleLogin)
+	mux.HandleFunc("POST /api/v1/auth/refresh", app.handleRefresh)
+	mux.HandleFunc("POST /api/v1/auth/logout", app.handleLogout)
+	mux.Handle("GET /api/v1/auth/me", app.requireAuth(http.HandlerFunc(app.handleMe)))
+	mux.HandleFunc("GET /api/v1/auth/google", app.handleGoogleStart)
+	mux.HandleFunc("GET /api/v1/auth/google/callback", app.handleGoogleCallback)
+	mux.Handle("/api/v1/admin", app.requireAdmin(http.HandlerFunc(app.handleProxy)))
+	mux.Handle("/api/v1/admin/", app.requireAdmin(http.HandlerFunc(app.handleProxy)))
 	// Everything else under /api/v1/ belongs to another microservice: check
 	// the session, then redirect to the correspondent service.
-	mux.Handle("/api/v1/", requireAuth(http.HandlerFunc(handleProxy)))
+	mux.Handle("/api/v1/", app.requireAuth(http.HandlerFunc(app.handleProxy)))
 
 	port := os.Getenv("PORT")
 	if port == "" {
