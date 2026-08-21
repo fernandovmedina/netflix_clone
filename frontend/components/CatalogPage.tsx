@@ -26,7 +26,11 @@ function matchesMode(item: CatalogItem, mode: CatalogMode): boolean {
 
 async function loadRows(mode: CatalogMode): Promise<HomeRow[]> {
   if (mode === "favorites") {
-    const items = await userApi.favorites();
+    const [favorites, catalog] = await Promise.all([userApi.favorites(), catalogApi.titles("?limit=100&offset=0")]);
+    const items = favorites.flatMap((favorite) => {
+      const playable = catalog.find((item) => (item.title_id ?? item.id) === favorite.title_id);
+      return playable ? [{ ...playable, ...favorite }] : [];
+    });
     return [{ id: "favorites", title: "My List", items }];
   }
   if (mode === "new") {
@@ -42,10 +46,15 @@ async function loadRows(mode: CatalogMode): Promise<HomeRow[]> {
   if (mode !== "home") return filtered;
 
   const progress = await userApi.continueWatching().catch(() => []);
+  const catalogItems = filtered.flatMap((row) => row.items);
+  const progressItems = progress.flatMap((entry) => {
+    const playable = catalogItems.find((item) => (item.title_id ?? item.id) === entry.title_id);
+    return playable ? [{ ...playable, title: entry.title, progress_kind: entry.kind, progress_id: entry.content_id, current_time_seconds: entry.current_time_seconds }] : [];
+  });
   const withoutContinue = filtered.filter((row) => !row.title.toLowerCase().includes("continue"));
-  return progress.length > 0
-    ? [{ id: "continue", title: "Continue watching", items: progress }, ...withoutContinue]
-    : withoutContinue;
+  const catalogContinue = filtered.find((row) => row.title.toLowerCase().includes("continue"));
+  if (progressItems.length > 0) return [{ id: "continue", title: "Continue watching", items: progressItems }, ...withoutContinue];
+  return catalogContinue ? [catalogContinue, ...withoutContinue] : withoutContinue;
 }
 
 export function CatalogPage({ mode }: { mode: CatalogMode }) {

@@ -6,11 +6,13 @@ import {
   isPlayable,
   titleId,
   userApi,
+  watchHref,
   type CatalogItem,
   type TitleDetail,
 } from "@/utils/api/client";
 import { Play, Plus } from "@deemlol/next-icons";
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type TitleModalProps = {
@@ -76,9 +78,7 @@ export function TitleModal({ item, onClose }: TitleModalProps) {
           <div className="absolute inset-x-5 bottom-8 sm:inset-x-10">
             <h2 className="max-w-2xl text-3xl font-black sm:text-5xl">{shown.title ?? "Title details"}</h2>
             <div className="mt-5 flex gap-3">
-              <button disabled={!playable} className="flex items-center gap-2 rounded bg-white px-5 py-2 font-bold text-black disabled:cursor-not-allowed disabled:bg-gray-600 disabled:text-gray-300">
-                <Play size={20} fill="currentColor" /> {playable ? "Play" : "Processing"}
-              </button>
+              {playable ? <Link href={watchHref(shown.asset_id as string, { kind: shown.progress_kind ?? (shown.movie_id ? "movie" : undefined), id: shown.progress_id ?? shown.movie_id, title: shown.title })} className="flex items-center gap-2 rounded bg-white px-5 py-2 font-bold text-black"><Play size={20} fill="currentColor" /> Play</Link> : <button disabled className="flex items-center gap-2 rounded bg-gray-600 px-5 py-2 font-bold text-gray-300"><Play size={20} fill="currentColor" /> Processing</button>}
               <button type="button" onClick={toggleFavorite} aria-label="Toggle My List" className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-400 hover:border-white">
                 <Plus size={24} className={favorite ? "rotate-45" : ""} />
               </button>
@@ -131,6 +131,7 @@ export function TitleModal({ item, onClose }: TitleModalProps) {
                       <div className="flex items-center justify-between gap-3"><h4 className="font-bold">{episode.title}</h4><span className="text-sm">{durationLabel(episode.duration)}</span></div>
                       <p className="mt-2 text-sm text-gray-300">{episode.description}</p>
                       {!episodePlayable && <p className="mt-2 text-xs font-semibold text-amber-400">This episode is still processing.</p>}
+                      {episodePlayable && <Link href={watchHref(episode.asset_id as string, { kind: "episode", id: episode.episode_id ?? episode.id, title: episode.title })} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded bg-white px-4 py-2 text-sm font-bold text-black"><Play size={17} fill="currentColor" /> Play episode</Link>}
                     </div>
                   </div>
                 );

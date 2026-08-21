@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const hasAccessToken = request.cookies.has("access_token");
-  const isProtected = pathname.startsWith("/home") || pathname.startsWith("/admin");
+  const isProtected = pathname.startsWith("/home") || pathname.startsWith("/admin") || pathname.startsWith("/watch");
 
   if (isProtected && !hasAccessToken) {
     const login = new URL("/login", request.url);
@@ -19,5 +19,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/home/:path*", "/admin/:path*", "/login", "/signup"],
+  matcher: ["/home/:path*", "/admin/:path*", "/watch/:path*", "/login", "/signup"],
 };

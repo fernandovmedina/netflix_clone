@@ -23,6 +23,9 @@ export type CatalogItem = {
   year_released?: number;
   asset_status?: "pending" | "processing" | "ready" | "failed";
   published?: boolean;
+  progress_kind?: ProgressKind;
+  progress_id?: number;
+  current_time_seconds?: number;
 };
 
 export type HomeRow = {
@@ -65,9 +68,36 @@ export type TitleDetail = CatalogItem & {
 export type Profile = {
   id: string;
   name: string;
-  avatar: string;
+  avatar: string | null;
   is_kids: boolean;
 };
+
+export type ProgressKind = "movie" | "episode";
+
+export type WatchProgress = {
+  current_time_seconds: number;
+  updated_at?: string;
+};
+
+export type AdminAssetStatus = {
+  status: "pending" | "processing" | "ready" | "failed" | "superseded";
+  qualities: string[];
+  error: string | null;
+  duration?: number | null;
+  source_width?: number | null;
+  source_height?: number | null;
+};
+
+export type AdminTitleInput = {
+  title: string;
+  description: string;
+  director: string;
+  year_released: number;
+  duration?: number;
+  number_of_seasons?: number;
+};
+
+export type CreatedTitle = { id: number; title_id: number };
 
 type ErrorBody = { error?: string; message?: string };
 type ApiOptions = RequestInit & { retryOnUnauthorized?: boolean };
@@ -198,8 +228,25 @@ export const catalogApi = {
   },
 };
 
-type FavoritesResponse = CatalogItem[] | { favorites: CatalogItem[] };
-type ContinueResponse = CatalogItem[] | { items: CatalogItem[] };
+export type FavoriteItem = {
+  title_id: number;
+  title: string;
+  content_type: string;
+  thumbnail_url: string;
+};
+
+export type ContinueItem = {
+  kind: ProgressKind;
+  content_id: number;
+  title_id: number;
+  title: string;
+  thumbnail_url: string;
+  current_time_seconds: number;
+  duration_seconds: number;
+};
+
+type FavoritesResponse = FavoriteItem[] | { favorites: FavoriteItem[] };
+type ContinueResponse = ContinueItem[] | { items: ContinueItem[] };
 type ProfilesResponse = Profile[] | { profiles: Profile[] };
 
 export const userApi = {
@@ -222,6 +269,35 @@ export const userApi = {
     apiRequest<ProfilesResponse>("/api/v1/profiles").then((response) =>
       Array.isArray(response) ? response : response.profiles,
     ),
+  progress: (kind: ProgressKind, id: number) =>
+    apiRequest<WatchProgress>(`/api/v1/progress/${kind}/${id}`),
+  updateProgress: (kind: ProgressKind, id: number, currentTimeSeconds: number) =>
+    apiRequest<WatchProgress>(`/api/v1/progress/${kind}/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ current_time_seconds: Math.max(0, Math.floor(currentTimeSeconds)) }),
+    }),
+};
+
+export const adminApi = {
+  titles: () => catalogApi.titles("?limit=100&offset=0"),
+  createTitle: (kind: "movies" | "series", input: AdminTitleInput) =>
+    apiRequest<CreatedTitle>(`/api/v1/admin/${kind}`, { method: "POST", body: JSON.stringify(input) }),
+  updateTitle: (kind: "movies" | "series", id: number, input: AdminTitleInput) =>
+    apiRequest<void>(`/api/v1/admin/${kind}/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  publish: (titleId: number, published: boolean) =>
+    apiRequest<{ published: boolean }>(`/api/v1/admin/titles/${titleId}/publish`, { method: "POST", body: JSON.stringify({ published }) }),
+  assetStatus: (assetId: string) =>
+    apiRequest<AdminAssetStatus>(`/api/v1/admin/assets/${assetId}`),
+  createSeason: (seriesId: number, seasonNumber: number) =>
+    apiRequest<{ id: number }>(`/api/v1/admin/series/${seriesId}/seasons`, {
+      method: "POST",
+      body: JSON.stringify({ season_number: seasonNumber, number_of_episodes: 0 }),
+    }),
+  createEpisode: (seasonId: number, episodeNumber: number, title: string) =>
+    apiRequest<{ id: number }>(`/api/v1/admin/seasons/${seasonId}/episodes`, {
+      method: "POST",
+      body: JSON.stringify({ episode_number: episodeNumber, title, description: "", duration: 0 }),
+    }),
 };
 
 export function artworkUrl(path: string): string {
@@ -236,4 +312,18 @@ export function titleId(item: CatalogItem): number {
 
 export function isPlayable(item: CatalogItem): boolean {
   return Boolean(item.asset_id) && (!item.asset_status || item.asset_status === "ready");
+}
+
+export function watchHref(
+  assetId: string,
+  options: { kind?: ProgressKind; id?: number; title?: string } = {},
+): string {
+  const params = new URLSearchParams();
+  if (options.kind && options.id) {
+    params.set("kind", options.kind);
+    params.set("id", String(options.id));
+  }
+  if (options.title) params.set("title", options.title);
+  const query = params.toString();
+  return `/watch/${encodeURIComponent(assetId)}${query ? `?${query}` : ""}`;
 }

@@ -28,7 +28,7 @@ export default function ManageProfiles() {
         <div className="my-8 flex flex-wrap justify-center gap-5">
           {profiles.map((profile) => (
             <Link key={profile.id} href={`/home/settings/${profile.id}`} className="group flex w-28 flex-col items-center">
-              <span className="relative"><Image src={profile.avatar ? artworkUrl(profile.avatar) : "/gray_profile.png"} alt={profile.name} width={112} height={112} className="aspect-square rounded object-cover opacity-75 group-hover:opacity-100" unoptimized={profile.avatar.startsWith("/")} /><Image src="/edit_white.png" alt="Edit" width={30} height={30} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" /></span>
+              <span className="relative"><Image src={profile.avatar ? artworkUrl(profile.avatar) : "/gray_profile.png"} alt={profile.name} width={112} height={112} className="aspect-square rounded object-cover opacity-75 group-hover:opacity-100" unoptimized={Boolean(profile.avatar?.startsWith("/"))} /><Image src="/edit_white.png" alt="Edit" width={30} height={30} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" /></span>
               <span className="mt-2 text-gray-400 group-hover:text-white">{profile.name}</span>
             </Link>
           ))}

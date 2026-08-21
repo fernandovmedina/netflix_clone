@@ -1,7 +1,8 @@
 "use client";
 
-import { artworkUrl, isPlayable, type CatalogItem } from "@/utils/api/client";
+import { artworkUrl, isPlayable, watchHref, type CatalogItem } from "@/utils/api/client";
 import { Info, Play } from "@deemlol/next-icons";
+import Link from "next/link";
 
 type HeroProps = {
   item: CatalogItem;
@@ -31,15 +32,18 @@ export function Hero({ item, onMoreInfo }: HeroProps) {
           </p>
         )}
         <div className="mt-6 flex flex-wrap gap-3">
-          <button
-            type="button"
-            disabled={!playable}
+          {playable ? <Link
+            href={watchHref(item.asset_id as string, {
+              kind: item.progress_kind ?? (item.movie_id ? "movie" : undefined),
+              id: item.progress_id ?? item.movie_id,
+              title: item.title,
+            })}
             title={playable ? "Play title" : "This title is still processing"}
             className="flex items-center gap-2 rounded bg-white px-6 py-2.5 font-bold text-black hover:bg-white/75 disabled:cursor-not-allowed disabled:bg-gray-600 disabled:text-gray-300"
           >
             <Play size={22} fill="currentColor" />
-            {playable ? "Play" : "Processing"}
-          </button>
+            Play
+          </Link> : <button type="button" disabled title="This title is still processing" className="flex items-center gap-2 rounded bg-gray-600 px-6 py-2.5 font-bold text-gray-300"><Play size={22} fill="currentColor" />Processing</button>}
           <button
             type="button"
             onClick={() => onMoreInfo(item)}

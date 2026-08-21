@@ -32,7 +32,7 @@ export default function Browse() {
         <div className="mt-8 flex flex-wrap items-start justify-center gap-5">
           {visibleProfiles.map((profile) => (
             <Link key={profile.id} href={`/home?uuid=${encodeURIComponent(profile.id)}`} className="group flex w-28 flex-col items-center">
-              <Image src={profile.avatar ? artworkUrl(profile.avatar) : "/gray_profile.png"} alt={`${profile.name} profile`} width={112} height={112} className="aspect-square rounded object-cover ring-2 ring-transparent group-hover:ring-white" unoptimized={profile.avatar.startsWith("/")} />
+              <Image src={profile.avatar ? artworkUrl(profile.avatar) : "/gray_profile.png"} alt={`${profile.name} profile`} width={112} height={112} className="aspect-square rounded object-cover ring-2 ring-transparent group-hover:ring-white" unoptimized={Boolean(profile.avatar?.startsWith("/"))} />
               <span className="mt-2 text-gray-400 group-hover:text-white">{profile.name}</span>
             </Link>
           ))}
