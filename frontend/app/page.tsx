@@ -8,7 +8,9 @@ import { useRef, useState } from "react";
 export default function Home() {
   const [email, setEmail] = useState<string>("");
 
-  const router: any = useRouter();
+  const router = useRouter();
+
+  type CarouselItem = { id: number; imgSrc: string };
 
   const carrouselData = [
     { id: 1, imgSrc: "/home/stranger_things.webp" },
@@ -23,8 +25,8 @@ export default function Home() {
     { id: 10, imgSrc: "/home/the_believers.webp" },
   ];
 
-  const Carrousel = ({ items }: any) => {
-    const carouselRef: any = useRef(null);
+  const Carrousel = ({ items }: { items: CarouselItem[] }) => {
+    const carouselRef = useRef<HTMLDivElement>(null);
 
     const scrollLeft = () => {
       if (!carouselRef.current) return;
@@ -51,7 +53,7 @@ export default function Home() {
           ref={carouselRef}
           className="flex overflow-x-auto no-scrollbar scroll-smooth snap-x snap-mandatory"
         >
-          {items.map((item: any) => (
+          {items.map((item) => (
             <div key={item.id} className="w-1/5 shrink-0 px-2 snap-start">
               <Image
                 src={item.imgSrc}
@@ -154,10 +156,10 @@ export default function Home() {
   };
 
   const verifyEmail = () => {
-    const emailInput: HTMLElement | any = document.getElementById("email_input");
+    const emailInput = document.getElementById("email_input") as HTMLInputElement | null;
 
     if (email === "") {
-      emailInput.focus();
+      emailInput?.focus();
     }
 
     if (email !== "") {

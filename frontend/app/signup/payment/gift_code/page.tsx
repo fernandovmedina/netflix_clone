@@ -21,10 +21,6 @@ export default function GiftCode() {
 
   const router = useRouter();
 
-  const startMembership = () => {
-    // TODO: Delete local storage items
-  };
-
   const changePlan = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
@@ -60,7 +56,7 @@ export default function GiftCode() {
         setPlanPrice(329);
         break;
     }
-  }, []);
+  }, [router]);
 
   return (
     <main className="bg-white text-black">

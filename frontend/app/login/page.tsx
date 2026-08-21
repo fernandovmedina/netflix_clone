@@ -1,12 +1,12 @@
 "use client";
 
 import AlertMessage from "@/components/AlertMessage";
-import { login } from "@/utils/api/auth";
-import { createClient } from "@/utils/supabase/client";
+import { useAuth } from "@/components/AuthProvider";
+import { API_URL } from "@/utils/api/client";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function Login() {
   const [rememberMe, setRememberMe] = useState<boolean>(false);
@@ -18,59 +18,65 @@ export default function Login() {
   const [mobileNumberAlert, setMobileNumberAlert] = useState<string>("");
   const [passwordAlert, setPasswordAlert] = useState<string>("");
   const [isLoginError, setIsLoginError] = useState<boolean>(false);
+  const [loginError, setLoginError] = useState("Email or password is incorrect.");
+  const [submitting, setSubmitting] = useState(false);
 
   const router = useRouter();
+  const { user, loading, login } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user) {
+      const next = new URLSearchParams(window.location.search).get("next");
+      router.replace(next?.startsWith("/") ? next : "/home/browse");
+    }
+  }, [loading, router, user]);
 
   const handleSignIn = async (type: string) => {
-    verifySignIn(type);
+    if (!verifySignIn(type)) return;
+    setSubmitting(true);
 
     try {
-      // Login goes through the auth service (nginx load balancer), which
-      // creates the session via Supabase Auth.
-      const session = await login(email, password);
-
-      // Hand the tokens to supabase-js so the session cookies the rest of
-      // the app relies on (layout redirect, middleware) stay in place.
-      const supabase = createClient();
-      const { error } = await supabase.auth.setSession({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-      });
-
-      if (error) {
-        setIsLoginError(true);
-        return;
-      }
-    } catch {
+      await login(email, password);
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : "Unable to sign in.");
       setIsLoginError(true);
       return;
+    } finally {
+      setSubmitting(false);
     }
 
-    router.push("/home/browse");
+    const next = new URLSearchParams(window.location.search).get("next");
+    router.replace(next?.startsWith("/") ? next : "/home/browse");
   }
 
   const toggleRememberMe = (e: React.ChangeEvent<HTMLInputElement>) => {
     setRememberMe(e.target.checked);
   };
 
-  const verifySignIn = (type: string) => {
+  const verifySignIn = (type: string): boolean => {
+    let valid = true;
     switch (type) {
       case "code":
         if (mobileNumber === "") {
           setMobileNumberAlert("Please enter a valid email or mobile number.");
+          valid = false;
         } else {
           setMobileNumberAlert("");
         }
+        break;
       case "password":
         if (email === "" && password === "") {
           setEmailAlert("Please enter a valid email or mobile number.");
           setPasswordAlert("Your password must contain between 4 and 60 characters.")
+          valid = false;
         }
         if (email == "") {
           setEmailAlert("Please enter a valid email or mobile number.");
+          valid = false;
         }
         if (password == "") {
           setPasswordAlert("Your password must contain between 4 and 60 characters.")
+          valid = false;
         }
         if (email !== "") {
           setEmailAlert("");
@@ -79,6 +85,7 @@ export default function Login() {
           setPasswordAlert("");
         }
     }
+    return valid;
   }
 
   return (
@@ -98,7 +105,7 @@ export default function Login() {
           <div className="text-white flex flex-col bg-black/90 mt-10 px-15 py-10 w-[40%]">
             <h1 className="font-extrabold text-3xl">Sign In</h1>
             <AlertMessage
-              message="Correo o contraseña equivocados"
+              message={loginError}
               isOpened={isLoginError}
               onClose={() => setIsLoginError(false)}
             />
@@ -118,8 +125,11 @@ export default function Login() {
             {signInCode ? (
               <button onClick={() => verifySignIn("code")} className="bg-red-600 my-4 py-2 font-bold rounded hover:bg-red-700 hover:cursor-pointer">Send Sign-In Code</button>
             ) : (
-              <button onClick={() => handleSignIn("password")} className="bg-red-600 my-4 py-2 font-bold rounded hover:bg-red-700 hover:cursor-pointer">Sign In</button>
+              <button disabled={submitting} onClick={() => handleSignIn("password")} className="bg-red-600 my-4 py-2 font-bold rounded hover:bg-red-700 hover:cursor-pointer disabled:cursor-wait disabled:opacity-60">{submitting ? "Signing In…" : "Sign In"}</button>
             )}
+            <a href={`${API_URL}/api/v1/auth/google`} className="mb-4 rounded border border-gray-500 py-2 text-center font-semibold hover:bg-white/10">
+              Continue with Google
+            </a>
             <p className="text-center text-gray-400">OR</p>
             {signInCode ? (
               <button onClick={() => setSignInCode(false)} className="bg-gray-600/50 py-2 my-4 rounded hover:cursor-pointer hover:bg-gray-600/30">Use password</button>
@@ -142,7 +152,7 @@ export default function Login() {
               <p className="text-gray-400 mr-2">New to Netflix? {' '}</p>
               <Link href="/" className="font-bold">Sign up now</Link>
             </div>
-            <p className="text-xs text-gray-400">This page is protected by Google reCAPTCHA to ensure you're not a bot.</p>
+            <p className="text-xs text-gray-400">This page is protected by Google reCAPTCHA to ensure you&apos;re not a bot.</p>
             <a className="text-blue-500 underline text-xs">Learn more.</a>
           </div>
         </div>

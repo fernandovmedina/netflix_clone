@@ -3,9 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { API_URL } from "@/utils/api/client";
 
 export default function SignUp() {
-  const router: any = useRouter();
+  const router = useRouter();
 
   const choosePlan = () => {
     router.push("/signup/planform")
@@ -62,6 +63,9 @@ export default function SignUp() {
           >
             Next
           </button>
+          <a href={`${API_URL}/api/v1/auth/google`} className="mt-4 rounded border border-gray-500 px-5 py-4 text-lg font-bold hover:bg-gray-100">
+            Continue with Google
+          </a>
         </div>
       </section>
       <footer className="text-gray-800 py-15 px-40 bg-gray-400/40">

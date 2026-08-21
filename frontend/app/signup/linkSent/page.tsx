@@ -12,10 +12,8 @@ export default function LinkSent() {
     setSavedEmail(localStorage.getItem("signup_email"));
   }, []);
 
-  const router: any = useRouter();
+  const router = useRouter();
 
-  const resendLink = () => {};
-  
   const createPassword = () => {
     router.push("/signup/regform")
   };
@@ -52,7 +50,7 @@ export default function LinkSent() {
             Finish setting up your account
           </h1>
           <p className="mt-5">
-            We'll send a sign-up link to{" "}
+            We&apos;ll send a sign-up link to{" "}
             <span className="font-extrabold">{savedEmail}</span> so you can use
             Netflix without a password on any device at any time.
           </p>

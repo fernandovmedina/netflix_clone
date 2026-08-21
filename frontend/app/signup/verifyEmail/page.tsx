@@ -12,10 +12,10 @@ export default function VerifyEmail() {
     setSavedEmail(localStorage.getItem("signup_email"));
   }, []);
 
-  const router: any = useRouter();
+  const router = useRouter();
 
   const skipVerify = () => {
-    router.push("/signup")
+    router.push("/signup/planform")
   }
 
   return (

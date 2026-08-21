@@ -1,10 +1,5 @@
 import type { Metadata } from "next";
-import { Roboto } from "next/font/google";
 import "../globals.css";
-
-const getRoboto = Roboto({
-  variable: "--font-roboto",
-});
 
 export const metadata: Metadata = {
   title: "Netflix",
@@ -17,7 +12,7 @@ export default function SignUpLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className={`${getRoboto.variable} antialiased`}>
+    <div className="font-sans antialiased">
       {children}
     </div>
   );

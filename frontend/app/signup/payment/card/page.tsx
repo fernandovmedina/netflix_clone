@@ -18,14 +18,13 @@ export default function Card() {
   const [cardExpiration, setCardExpiration] = useState<string>("");
   const [cvv, setCvv] = useState<string>("");
   const [cardName, setCardName] = useState<string>("");
+  const router = useRouter();
 
   useEffect(() => {
     setCardNumber(localStorage.getItem("signup_cardnumber") || "");
     setCardExpiration(localStorage.getItem("signup_cardexpiration") || "");
     setCardName(localStorage.getItem("signup_cardname") || "");
   }, []);
-
-  const router = useRouter();
 
   const startMembership = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!isAgreed) {
@@ -78,7 +77,7 @@ export default function Card() {
         setPlanPrice(329);
         break;
     }
-  }, []);
+  }, [router]);
 
   const toggleInput = (name: string) => {
     if (name === "card") {

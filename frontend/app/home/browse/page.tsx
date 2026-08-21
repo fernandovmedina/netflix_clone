@@ -1,169 +1,56 @@
 "use client";
 
+import { useAuth } from "@/components/AuthProvider";
+import { artworkUrl, userApi, type Profile } from "@/utils/api/client";
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function Browse() {
-  const [isAddProfileModalOpen, setIsAddProfileModalOpen] =
-    useState<boolean>(false);
+  const { user } = useAuth();
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [isAddProfileModalOpen, setIsAddProfileModalOpen] = useState(false);
 
-  const setModalOpen = () => {
-    setIsAddProfileModalOpen(!isAddProfileModalOpen);
-  };
+  useEffect(() => {
+    userApi
+      .profiles()
+      .then(setProfiles)
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Unable to load profiles."))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const ProfileCard = ({
-    id,
-    uuid,
-    name,
-    profileURL,
-  }: {
-    id: string;
-    uuid: string;
-    name: string;
-    profileURL: string;
-  }) => {
-    return (
-      <div className="relative flex flex-col items-center mx-2 cursor-pointer group">
-        <Link href={`/home?uuid=${uuid}`}>
-          <div className="relative">
-            <Image
-              src={profileURL}
-              alt={`${name}_profile`}
-              width={100}
-              height={100}
-              className="rounded"
-            />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition rounded" />
-          </div>
-          <p className="text-gray-400 mt-2 group-hover:text-white transition">
-            {name}
-          </p>
-        </Link>
-      </div>
-    );
-  };
-
-  const ProfileCards = () => {
-    const profilesData = [
-      {
-        id: "1",
-        uuid: "550e8400-e29b-41d4-a716-446655440000",
-        name: "Fernando",
-        profileURL:
-          "https://occ-0-7553-114.1.nflxso.net/dnm/api/v6/vN7bi_My87NPKvsBoib006Llxzg/AAAABW7Wui3ZqHqBvl3R__TmY0sDZF-xBxJJinhVWRwu7OmYkF2bdwH4nqfnyT3YQ-JshQvap33bDbRLACSoadpKwbIQIBktdtHjxw.png?r=201",
-      },
-      {
-        id: "2",
-        uuid: "550e8400-e29b-41d4-a716-446655440001",
-        name: "Norma",
-        profileURL:
-          "https://occ-0-7553-114.1.nflxso.net/dnm/api/v6/vN7bi_My87NPKvsBoib006Llxzg/AAAABTIZOev-u19Mt_7c0K1XCwCzdTwmEIeOnSktsLHUugSaqg3NEdm7_UwQT61sGtccTocB8YP980t_te4iEfcglFxEHPXxO0WGPA.png?r=7c7",
-      },
-      {
-        id: "3",
-        uuid: "550e8400-e29b-41d4-a716-446655440002",
-        name: "Mariajose",
-        profileURL:
-          "https://occ-0-7553-114.1.nflxso.net/dnm/api/v6/vN7bi_My87NPKvsBoib006Llxzg/AAAABXFZnMq0aIUsTd1J4Zy10TaPi4Ulx3VRyT_ZN1p9XYcE1KAon0Ndskx0e2tTr9hajESYNDSnSrbDexSXvmYSBiI8gVqOF9SORA.png?r=b39",
-      },
-      {
-        id: "4",
-        uuid: "550e8400-e29b-41d4-a716-446655440003",
-        name: "Alejandro",
-        profileURL:
-          "https://occ-0-7553-114.1.nflxso.net/dnm/api/v6/vN7bi_My87NPKvsBoib006Llxzg/AAAABctYlCzOlqC1hdCkR_KU5IQx82pDkgFTrIrCcmcwE_Bnxjnbt8YdgfiASj0RhaTddAo0oIItoLHO-DXJK3teuJKhvILRhpJVVg.png?r=6a6",
-      },
-    ];
-
-    return (
-      <div className="flex flex-row justify-center items-center">
-        {profilesData.map((item) => (
-          <ProfileCard
-            id={item.id}
-            uuid={item.uuid}
-            name={item.name}
-            profileURL={item.profileURL}
-            key={item.id}
-          />
-        ))}
-        <div
-          onClick={setModalOpen}
-          className="relative flex flex-col items-center mx-2 cursor-pointer group"
-        >
-          <div className="w-[100px] h-[100px] flex items-center justify-center rounded border border-dashed border-gray-400 group-hover:border-white group-hover:bg-black/40 transition">
-            <Image
-              src="/add_white.png"
-              alt="add_profile_icon"
-              width={30}
-              height={30}
-            />
-          </div>
-          <span className="mt-2 text-sm text-gray-400 group-hover:text-white transition">
-            Añadir perfil
-          </span>
-        </div>
-      </div>
-    );
-  };
+  const visibleProfiles = profiles.length > 0 ? profiles : user ? [{ id: user.id, name: user.name || "Main profile", avatar: "/gray_profile.png", is_kids: false }] : [];
 
   return (
-    <main className="bg-black text-white flex items-center justify-center min-h-screen">
+    <main className="flex min-h-screen items-center justify-center bg-black px-5 text-white">
       <div className="text-center">
-        <h1 className="text-5xl">Who's watching now?</h1>
-        <div className="mt-5 mb-10">
-          <ProfileCards />
+        <h1 className="text-3xl sm:text-5xl">Who&apos;s watching now?</h1>
+        {loading && <p className="mt-8 animate-pulse text-gray-400">Loading profiles…</p>}
+        {error && <p className="mt-5 text-sm text-amber-300">{error} Showing your main profile.</p>}
+        <div className="mt-8 flex flex-wrap items-start justify-center gap-5">
+          {visibleProfiles.map((profile) => (
+            <Link key={profile.id} href={`/home?uuid=${encodeURIComponent(profile.id)}`} className="group flex w-28 flex-col items-center">
+              <Image src={profile.avatar ? artworkUrl(profile.avatar) : "/gray_profile.png"} alt={`${profile.name} profile`} width={112} height={112} className="aspect-square rounded object-cover ring-2 ring-transparent group-hover:ring-white" unoptimized={profile.avatar.startsWith("/")} />
+              <span className="mt-2 text-gray-400 group-hover:text-white">{profile.name}</span>
+            </Link>
+          ))}
+          <button type="button" onClick={() => setIsAddProfileModalOpen(true)} className="group flex w-28 flex-col items-center">
+            <span className="flex aspect-square w-28 items-center justify-center rounded border border-dashed border-gray-400 group-hover:border-white"><Image src="/add_white.png" alt="" width={32} height={32} /></span>
+            <span className="mt-2 text-gray-400 group-hover:text-white">Add profile</span>
+          </button>
         </div>
-        <Link
-          href="/home/ManageProfiles"
-          className="border-2 border-gray-500/70 text-gray-500/70 hover:text-white hover:border-white px-5 py-2"
-        >
-          Manage Profiles
-        </Link>
+        <Link href="/home/ManageProfiles" className="mt-10 inline-block border-2 border-gray-500 px-5 py-2 text-gray-400 hover:border-white hover:text-white">Manage Profiles</Link>
       </div>
       {isAddProfileModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="relative bg-[#141414] rounded-lg w-[600px] p-10 text-white">
-            <button
-              onClick={setModalOpen}
-              className="absolute top-5 right-5 text-white hover:text-gray-500 text-xl"
-            >
-              ✕
-            </button>
-            <h1 className="text-2xl font-semibold text-center mt-10 mb-2">
-              Add a profile
-            </h1>
-            <p className="text-center text-sm">
-              Add a profile for another person who is going to watch netflix.
-            </p>
-            <div className="my-5 flex flex-row items-center">
-              <Image
-                src="https://occ-0-7553-114.1.nflxso.net/dnm/api/v6/vN7bi_My87NPKvsBoib006Llxzg/AAAABYo85Lg8Qn22cahF2sIw7K_gDo3cGpvw3Gt5xl7FIazw864EYeVkm71Qvrlz0HP2fU4n26AVq15v5t8T4lVBpBcqqZbmRHHsMefk.png?r=1d4"
-                alt="add_profile"
-                width={70}
-                height={70}
-                className="rounded"
-              />
-              <input className="ml-5 outline-0 border border-gray-500/70 px-5 py-3 rounded w-full" type="text" placeholder="Name" />
-            </div>
-            <div className="flex items-center justify-between w-full max-w-xl bg-neutral-800 px-6 py-4 rounded">
-              <div>
-                <h1 className="text-white text-lg font-semibold">
-                  Profile for kids
-                </h1>
-                <p className="text-neutral-400 text-sm">
-                  See only children's titles
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" />
-                <div className="w-12 h-7 bg-neutral-600 rounded-full peer peer-checked:bg-neutral-500 after:content-[''] after:absolute after:top-1 after:left-1 after:bg-neutral-900 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
-              </label>
-            </div>
-            <div className="flex flex-col mt-10">
-              <button className="bg-white text-black hover:bg-gray-100/80 font-bold w-full py-3 rounded">Save</button>
-              <button onClick={setModalOpen} className="mt-2 w-full font-bold hover:bg-gray-200/70 py-3 rounded">Cancel</button>
-            </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="relative w-full max-w-xl rounded-lg bg-[#181818] p-7 text-left sm:p-10">
+            <button type="button" onClick={() => setIsAddProfileModalOpen(false)} className="absolute right-5 top-4 text-2xl">×</button>
+            <h2 className="text-2xl font-bold">Add a profile</h2>
+            <p className="mt-2 text-sm text-gray-300">Profile creation will be available when account management is enabled.</p>
+            <div className="mt-6 flex items-center gap-4"><Image src="/gray_profile.png" alt="" width={70} height={70} /><input className="w-full rounded border border-gray-500 bg-transparent px-4 py-3" placeholder="Name" /></div>
+            <button type="button" onClick={() => setIsAddProfileModalOpen(false)} className="mt-7 w-full rounded bg-white py-3 font-bold text-black">Done</button>
           </div>
         </div>
       )}

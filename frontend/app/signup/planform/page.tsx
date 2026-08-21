@@ -20,7 +20,7 @@ export default function Planform() {
   }, []);
 
   const goPay = () => {
-    const _ = localStorage.setItem("plan_choosed", planChoosed);
+    localStorage.setItem("plan_choosed", planChoosed);
 
     if (change) {
       switch (paymentType) {
@@ -63,7 +63,7 @@ export default function Planform() {
           <span className="font-bold">4</span>
         </p>
         <h1 className="text-4xl font-bold">
-          Choose the plan that's right for you
+          Choose the plan that&apos;s right for you
         </h1>
         <div className="mt-5 mb-20 flex flex-row w-full">
           <div

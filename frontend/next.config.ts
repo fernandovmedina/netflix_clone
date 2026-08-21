@@ -5,9 +5,10 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       {
-        protocol: "https",
-        hostname: "occ-0-7553-114.1.nflxso.net",
-        pathname: "/dnm/api/v6/**",
+        protocol: "http",
+        hostname: "localhost",
+        port: "8080",
+        pathname: "/api/v1/stream/thumbnails/**",
       },
     ],
   },

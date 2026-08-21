@@ -1,6 +1,6 @@
 "use client";
 
-import { createClient } from "@/utils/supabase/client";
+import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -9,21 +9,20 @@ export default function HomeLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { user, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    const supabase = createClient();
+    if (!loading && !user) router.replace("/login");
+  }, [loading, router, user]);
 
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        router.replace("/");
-      }
-    };
-
-    checkSession();
-  }, [router]);
+  if (loading || !user) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-black text-white">
+        <p className="animate-pulse text-lg">Loading your profile…</p>
+      </main>
+    );
+  }
 
   return <>{children}</>;
 }

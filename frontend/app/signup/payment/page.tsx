@@ -3,17 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 
 export default function Payment() {
-  const [paymentType, setPaymentType] = useState<string>("");
-  const [plan, setPlan] = useState<string | null>(null);
-
   const router = useRouter();
-
-  useEffect(() => {
-    setPlan(new URLSearchParams(window.location.search).get("plan"));
-  }, []);
 
   const PaymentFields = () => {
     const paymentFieldsData = [

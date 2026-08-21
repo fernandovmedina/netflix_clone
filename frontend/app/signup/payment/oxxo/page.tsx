@@ -27,10 +27,6 @@ export default function Oxxo() {
 
   const router = useRouter();
 
-  const startMembership = () => {
-    // TODO: Delete local storage items
-  };
-
   const changePlan = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
@@ -67,7 +63,7 @@ export default function Oxxo() {
         setPlanPrice(329);
         break;
     }
-  }, []);
+  }, [router]);
 
   return (
     <main className="bg-white text-black">
@@ -105,7 +101,7 @@ export default function Oxxo() {
           </p>
           <h1 className="font-bold text-3xl">Get your OXXO reference code</h1>
           <p className="mt-8 mb-4">
-            We'll send your code to this phone number.
+            We&apos;ll send your code to this phone number.
           </p>
           <p>
             Your number will also be used if you forget your password and for

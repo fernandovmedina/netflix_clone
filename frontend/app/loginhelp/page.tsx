@@ -81,7 +81,7 @@ export default function LoginHelp() {
                 </div>
               )
             }
-            <p className="underline" onClick={() => setForgot(true)}>I don't remember my email or phone.</p>
+            <p className="underline" onClick={() => setForgot(true)}>I don&apos;t remember my email or phone.</p>
           </div>
         </div>
         <div className={`${forgot ? "flex items-center justify-center mt-20" : "hidden"}`}>

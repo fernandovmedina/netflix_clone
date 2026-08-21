@@ -20,12 +20,6 @@ importers:
       '@mui/material':
         specifier: ^9.0.0
         version: 9.2.0(@emotion/react@11.14.0(@types/react@19.2.17)(react@19.2.0))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.17)(react@19.2.0))(@types/react@19.2.17)(react@19.2.0))(@types/react@19.2.17)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
-      '@supabase/ssr':
-        specifier: ^0.8.0
-        version: 0.8.0(@supabase/supabase-js@2.110.1)
-      '@supabase/supabase-js':
-        specifier: ^2.95.3
-        version: 2.110.1
       next:
         specifier: ^16.1.6
         version: 16.2.10(@babel/core@7.29.7)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -605,38 +599,6 @@ packages:
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
 
-  '@supabase/auth-js@2.110.1':
-    resolution: {integrity: sha512-8EJUoRoqzAYWkieHrLCrGrxs3cBbRB94xK8GzHe0aSLlSa4mt1enYLCiMgLiKJOF8GNYeX6PLTBNef0XAhILgw==}
-    engines: {node: '>=22.0.0'}
-
-  '@supabase/functions-js@2.110.1':
-    resolution: {integrity: sha512-Pm9HD9Qth6zQO0aOGZ3DxYb6QlCzrkTkP6eUEOvhTlbvcvYRDSCZXIJ5dkDLpqxD+gdrXfWDFOpU9BpRKYjsIQ==}
-    engines: {node: '>=22.0.0'}
-
-  '@supabase/phoenix@0.4.4':
-    resolution: {integrity: sha512-Gt0pqoXuIqX/8dvG0OKp/wMCobXNH3klNbUPBNyOfN0YA1IswrM3HyWFMOPk1Jy+BRaIyDPcFx4jLBwHNmlyfQ==}
-
-  '@supabase/postgrest-js@2.110.1':
-    resolution: {integrity: sha512-BILNhS40oGlP2bn/VJjh/1hCyrWNMmpGZGcCrPvqd5R3s8gf8Bd5qyKoHZdMwTKynGCuJGjagRXa069abhibMw==}
-    engines: {node: '>=22.0.0'}
-
-  '@supabase/realtime-js@2.110.1':
-    resolution: {integrity: sha512-JmWCpMoe2iJPNrXIdHqIvf2Mie6NfSuWHS9Ve6YCmLkn1mNl3vrK3a67IukJ5lPjgmAzB+jFagyMz2oSIX+Xnw==}
-    engines: {node: '>=22.0.0'}
-
-  '@supabase/ssr@0.8.0':
-    resolution: {integrity: sha512-/PKk8kNFSs8QvvJ2vOww1mF5/c5W8y42duYtXvkOSe+yZKRgTTZywYG2l41pjhNomqESZCpZtXuWmYjFRMV+dw==}
-    peerDependencies:
-      '@supabase/supabase-js': ^2.76.1
-
-  '@supabase/storage-js@2.110.1':
-    resolution: {integrity: sha512-UqJGzhFMiIRBe8vT7a6ZtrN2U5YufH4Tk9nyc9KKfa2TUtV11BkSg/v3lyy/c4A8SbekVH3UywTF0s42zpF4zw==}
-    engines: {node: '>=22.0.0'}
-
-  '@supabase/supabase-js@2.110.1':
-    resolution: {integrity: sha512-MiJh0THZgyAvTWm91FOLknjH5dYjXRKOdxpuUsyTVZVXIf7FxCShzevIm4KGCubHRU2n25Gyt8PhTXIFzcD9FA==}
-    engines: {node: '>=22.0.0'}
-
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
 
@@ -1098,10 +1060,6 @@ packages:
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
 
-  cookie@1.1.1:
-    resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
-    engines: {node: '>=18'}
-
   cosmiconfig@7.1.0:
     resolution: {integrity: sha512-AdmX6xUzdNASswsFtmwSt7Vj8po9IuqXm0UXz7QKPuEUmPB4XyjGfaAr2PSuELMwkRMVH1EpIkX5bTZGRB3eCA==}
     engines: {node: '>=10'}
@@ -1321,6 +1279,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -1494,10 +1453,6 @@ packages:
 
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
-
-  iceberg-js@0.8.1:
-    resolution: {integrity: sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA==}
-    engines: {node: '>=20.0.0'}
 
   ignore@5.3.2:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
@@ -2799,43 +2754,6 @@ snapshots:
 
   '@rtsao/scc@1.1.0': {}
 
-  '@supabase/auth-js@2.110.1':
-    dependencies:
-      tslib: 2.8.1
-
-  '@supabase/functions-js@2.110.1':
-    dependencies:
-      tslib: 2.8.1
-
-  '@supabase/phoenix@0.4.4': {}
-
-  '@supabase/postgrest-js@2.110.1':
-    dependencies:
-      tslib: 2.8.1
-
-  '@supabase/realtime-js@2.110.1':
-    dependencies:
-      '@supabase/phoenix': 0.4.4
-      tslib: 2.8.1
-
-  '@supabase/ssr@0.8.0(@supabase/supabase-js@2.110.1)':
-    dependencies:
-      '@supabase/supabase-js': 2.110.1
-      cookie: 1.1.1
-
-  '@supabase/storage-js@2.110.1':
-    dependencies:
-      iceberg-js: 0.8.1
-      tslib: 2.8.1
-
-  '@supabase/supabase-js@2.110.1':
-    dependencies:
-      '@supabase/auth-js': 2.110.1
-      '@supabase/functions-js': 2.110.1
-      '@supabase/postgrest-js': 2.110.1
-      '@supabase/realtime-js': 2.110.1
-      '@supabase/storage-js': 2.110.1
-
   '@swc/helpers@0.5.15':
     dependencies:
       tslib: 2.8.1
@@ -3275,8 +3193,6 @@ snapshots:
   convert-source-map@1.9.0: {}
 
   convert-source-map@2.0.0: {}
-
-  cookie@1.1.1: {}
 
   cosmiconfig@7.1.0:
     dependencies:
@@ -3834,8 +3750,6 @@ snapshots:
   hoist-non-react-statics@3.3.2:
     dependencies:
       react-is: 16.13.1
-
-  iceberg-js@0.8.1: {}
 
   ignore@5.3.2: {}
 

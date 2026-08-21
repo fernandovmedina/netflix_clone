@@ -7,7 +7,7 @@ import { useState } from "react";
 export default function ProfileSettings() {
   const router = useRouter();
 
-  const [isMainProfile, setIsMainProfile] = useState<boolean>(true);
+  const [isMainProfile] = useState<boolean>(true);
 
   return (
     <main className="bg-white text-black">
@@ -38,7 +38,7 @@ export default function ProfileSettings() {
             <div className="flex items-center justify-between pb-5">
               <div className="flex items-center gap-4">
                 <Image
-                  src="https://occ-0-7553-114.1.nflxso.net/dnm/api/v6/vN7bi_My87NPKvsBoib006Llxzg/AAAABTIGL_gJccfoM0OVmMb1xD1VgUNeiW5QN0r0ac7yKqHBmrnO92ctrpMKE6v2lkMIRp_vYmREKLtTJ2lodWUtiG5wdnPQGjjXvg.png?r=18a"
+                  src="/gray_profile.png"
                   alt="profile_image"
                   width={40}
                   height={40}

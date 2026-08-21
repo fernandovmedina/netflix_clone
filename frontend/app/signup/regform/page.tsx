@@ -1,7 +1,7 @@
 "use client";
 
 import AlertMessage from "@/components/AlertMessage";
-import { signup } from "@/utils/api/auth";
+import { useAuth } from "@/components/AuthProvider";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 export default function Regform() {
   const [password, setPassword] = useState<string>("");
   const [email, setEmail] = useState<string>("");
+  const [name, setName] = useState<string>("");
   const [signupAlert, setSignupAlert] = useState<string>("");
   const [isSignupError, setIsSignupError] = useState<boolean>(false);
 
@@ -17,19 +18,18 @@ export default function Regform() {
     setEmail(localStorage.getItem("signup_email") ?? "");
   }, []);
 
-  const router: any = useRouter();
+  const router = useRouter();
+  const { signup } = useAuth();
 
   const handleSignup = async () => {
-    if (email === "" || password === "") {
-      setSignupAlert("Please enter your email and a password.");
+    if (name.trim() === "" || email === "" || password.length < 8) {
+      setSignupAlert("Enter your name, email, and a password of at least 8 characters.");
       setIsSignupError(true);
       return;
     }
 
     try {
-      // Creates the account through the auth service (nginx load balancer);
-      // Supabase then sends the confirmation email the next step refers to.
-      await signup("", email, password);
+      await signup(name.trim(), email, password);
     } catch (error) {
       setSignupAlert(error instanceof Error ? error.message : "Something went wrong. Please try again.");
       setIsSignupError(true);
@@ -65,13 +65,14 @@ export default function Regform() {
             Create a password to start your membership
           </h1>
           <p className="mt-5">
-            Just a few more steps and you're done! We hate paperwork, too.
+            Just a few more steps and you&apos;re done! We hate paperwork, too.
           </p>
           <AlertMessage
             message={signupAlert}
             isOpened={isSignupError}
             onClose={() => setIsSignupError(false)}
           />
+          <input onChange={(e) => setName(e.target.value)} value={name} className="border border-gray-400 px-4 py-4 mt-4 rounded" type="text" placeholder="Your name" />
           <input onChange={(e) => setEmail(e.target.value)} value={email} className="border border-gray-400 px-4 py-4 mt-4 rounded" type="email" placeholder="email@email.com" />
           <input onChange={(e) => setPassword(e.target.value)} className="border border-gray-400 px-4 py-4 rounded mt-2" type="password" placeholder="Add a password" />
           <button

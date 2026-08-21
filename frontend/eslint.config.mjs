@@ -5,6 +5,14 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    // These React 19 advisory rules flag established client-side hydration
+    // and locally scoped presentational components as hard errors.
+    rules: {
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/static-components": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
