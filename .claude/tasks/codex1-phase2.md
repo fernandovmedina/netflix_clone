@@ -76,9 +76,22 @@ GET /api/v1/stream/thumbnails/:file
 
 ---
 
+## Known facts about the real seed source (measured, not assumed)
+
+`seed/video/video.mp4` is **1366×768, h264, 24 fps, 5.875 s, 451 KB, and has NO audio stream.**
+
+Consequences you must handle:
+- Its ladder is 144/240/360/480/720 — **not** 1080p or 1440p. 768 is not a ladder height; do not emit a "768p" rung and do not upscale to 1080.
+- 1366 is an odd-ish width: at 720p the scaled width is 1280.6 and at 480p it is 853.75. Even-rounding is not theoretical here — it is exercised by the only source we have. Verify the generated `RESOLUTION` values are all even.
+- **No audio stream.** Any ffmpeg command with a hardcoded `-c:a aac` or an audio-bitrate flag will fail on this file. Detect audio presence from ffprobe and build the arg list accordingly. This is the single most likely cause of a failed seed transcode — test it explicitly.
+- At 5.875 s with 6 s segments every rendition yields exactly one segment, which does not exercise seeking or ABR switching.
+
+**Therefore also generate synthetic test sources** with ffmpeg (`testsrc2` + `sine`) at 360p, 720p, 1080p and 1440p, each ~60 s, *with* audio, and run them through the pipeline. That is how we satisfy "test multiple video source resolutions" and get a manifest long enough to seek in. Put the generator in `microservices/worker/testdata/` as a script; **do not commit the generated media** — it is git-ignored.
+
 ## Tests (required)
 
-- ladder selection: 90p, 480p, 720p, 1080p, 1440p, 2160p sources → expected rendition sets, no upscaling ever
+- ladder selection: 90p, 480p, 720p, 768p, 1080p, 1440p, 2160p sources → expected rendition sets, no upscaling ever
+- a source with **no audio stream** transcodes successfully (regression test for the real seed video)
 - even-dimension rounding for odd aspect ratios (e.g. 1919×1079)
 - `SKIP LOCKED` claim: N concurrent claimers, each job claimed exactly once
 - lease reclaim: an expired lease is re-claimable; a live one is not
