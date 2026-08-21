@@ -28,8 +28,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (the root template is intentionally committed)
 .env*
+!/.env.example
 .env.local
 
 # vercel
@@ -44,3 +45,9 @@ next-env.d.ts
 
 # local configuration files and directories
 supabase/
+
+# generated media (scope segments so TypeScript source remains tracked)
+/media/
+/media/**/*.ts
+*.m3u8
+/.pnpm-store/

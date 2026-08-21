@@ -1,0 +1,10 @@
+.git
+.claude
+.env
+**/.env
+**/.env.*
+**/node_modules
+**/.next
+media
+**/*.log
+**/.DS_Store

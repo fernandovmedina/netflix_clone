@@ -1,0 +1,196 @@
+x-go-service: &go-service
+  env_file: [./.env]
+  restart: unless-stopped
+  networks: [backend]
+  depends_on:
+    seed:
+      condition: service_completed_successfully
+  healthcheck:
+    test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+    interval: 15s
+    timeout: 3s
+    retries: 5
+    start_period: 10s
+
+x-worker-service: &worker-service
+  build:
+    context: ./microservices/worker
+    additional_contexts:
+      shared: ./microservices/shared
+  env_file: [./.env]
+  restart: unless-stopped
+  networks: [backend]
+  depends_on:
+    seed:
+      condition: service_completed_successfully
+  volumes: [media:/media]
+  healthcheck:
+    test: ["CMD-SHELL", "grep -aq worker-service /proc/1/cmdline"]
+    interval: 15s
+    timeout: 3s
+    retries: 5
+    start_period: 10s
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    env_file: [./.env]
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [backend]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  migrate:
+    build:
+      context: .
+      dockerfile: microservices/migrate/Dockerfile
+    env_file: [./.env]
+    environment: {MIGRATIONS_DIR: /app/migrations}
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [backend]
+    restart: "no"
+
+  seed:
+    build:
+      context: .
+      dockerfile: microservices/seed/Dockerfile
+    env_file: [./.env]
+    environment:
+      MEDIA_ROOT: /media
+      SEED_ROOT: /app/seed
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    volumes: [media:/media]
+    networks: [backend]
+    restart: "no"
+
+  auth1:
+    <<: *go-service
+    build: &auth-build
+      context: ./microservices/auth
+      additional_contexts:
+        shared: ./microservices/shared
+    hostname: auth1
+    environment: &auth-environment
+      CATALOG_SERVICE_URL: http://nginx:8081/catalog
+      STREAMING_SERVICE_URL: http://nginx:8081/streaming
+      USER_SERVICE_URL: http://nginx:8081/user
+  auth2:
+    <<: *go-service
+    build: *auth-build
+    hostname: auth2
+    environment: *auth-environment
+  auth3:
+    <<: *go-service
+    build: *auth-build
+    hostname: auth3
+    environment: *auth-environment
+
+  catalog1:
+    <<: *go-service
+    build: &catalog-build
+      context: ./microservices/catalog
+      additional_contexts:
+        shared: ./microservices/shared
+    hostname: catalog1
+    environment: {MEDIA_ROOT: /media}
+    volumes: [media:/media]
+  catalog2:
+    <<: *go-service
+    build: *catalog-build
+    hostname: catalog2
+    environment: {MEDIA_ROOT: /media}
+    volumes: [media:/media]
+
+  streaming1:
+    <<: *go-service
+    build: &streaming-build
+      context: ./microservices/streaming
+      additional_contexts:
+        shared: ./microservices/shared
+    hostname: streaming1
+    environment: {MEDIA_ROOT: /media}
+    volumes: [media:/media:ro]
+  streaming2:
+    <<: *go-service
+    build: *streaming-build
+    hostname: streaming2
+    environment: {MEDIA_ROOT: /media}
+    volumes: [media:/media:ro]
+
+  user1:
+    <<: *go-service
+    build: &user-build
+      context: ./microservices/user
+      additional_contexts:
+        shared: ./microservices/shared
+    hostname: user1
+  user2:
+    <<: *go-service
+    build: *user-build
+    hostname: user2
+
+  worker1:
+    <<: *worker-service
+    hostname: worker1
+  worker2:
+    <<: *worker-service
+    hostname: worker2
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports: ["8080:80"]
+    volumes: [./microservices/nginx/nginx.conf:/etc/nginx/nginx.conf:ro]
+    depends_on:
+      auth1: {condition: service_healthy}
+      auth2: {condition: service_healthy}
+      auth3: {condition: service_healthy}
+      catalog1: {condition: service_healthy}
+      catalog2: {condition: service_healthy}
+      streaming1: {condition: service_healthy}
+      streaming2: {condition: service_healthy}
+      user1: {condition: service_healthy}
+      user2: {condition: service_healthy}
+    networks: [backend]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/nginx-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ./frontend
+      args: {NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL}"}
+    env_file: [./.env]
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    ports: ["3000:3000"]
+    depends_on:
+      nginx: {condition: service_healthy}
+    networks: [backend]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pgdata:
+  media:
+
+networks:
+  backend:
+    driver: bridge
