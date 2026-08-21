@@ -18,13 +18,14 @@ import (
 var hostname string
 
 type application struct {
-	pool           *pgxpool.Pool
-	repo           *repository
-	tokens         *tokenManager
-	cookieSecure   bool
-	dummyHash      []byte
-	httpClient     *http.Client
-	proxyTransport http.RoundTripper
+	pool                   *pgxpool.Pool
+	repo                   *repository
+	tokens                 *tokenManager
+	cookieSecure           bool
+	dummyHash              []byte
+	httpClient             *http.Client
+	proxyTransport         http.RoundTripper
+	compareHashAndPassword func([]byte, []byte) error
 }
 
 func main() {

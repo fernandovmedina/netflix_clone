@@ -32,7 +32,7 @@ func TestRunnerIdempotent(t *testing.T) {
 	if err := pool.QueryRow(context.Background(), "select count(*) from schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 3 {
-		t.Fatalf("got %d applied migrations, want 3", count)
+	if count != 4 {
+		t.Fatalf("got %d applied migrations, want 4", count)
 	}
 }

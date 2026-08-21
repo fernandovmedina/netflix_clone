@@ -3,6 +3,7 @@ package authctx
 import (
 	"context"
 	"net/http"
+	"strings"
 )
 
 const (
@@ -29,9 +30,12 @@ func FromContext(ctx context.Context) (User, bool) {
 }
 
 func Strip(r *http.Request) {
-	r.Header.Del(UserIDHeader)
-	r.Header.Del(EmailHeader)
-	r.Header.Del(RoleHeader)
+	for key := range r.Header {
+		normalized := strings.ToLower(strings.ReplaceAll(key, "_", "-"))
+		if normalized == "x-user-id" || normalized == "x-user-email" || normalized == "x-user-role" {
+			delete(r.Header, key)
+		}
+	}
 }
 
 func Inject(r *http.Request, user User) {

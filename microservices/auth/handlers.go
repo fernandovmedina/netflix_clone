@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -30,10 +31,15 @@ func (app *application) handleSignup(w http.ResponseWriter, r *http.Request) {
 		app.error(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	var err error
+	req.Email, err = normalizeEmail(req.Email)
 	req.Name = strings.TrimSpace(req.Name)
-	if req.Email == "" || len(req.Password) < 8 {
-		app.error(w, http.StatusBadRequest, "email and a password of at least 8 characters are required")
+	if err != nil {
+		app.error(w, http.StatusBadRequest, "a valid email address is required")
+		return
+	}
+	if err := validatePassword(req.Password); err != nil {
+		app.error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
@@ -65,14 +71,19 @@ func (app *application) handleLogin(w http.ResponseWriter, r *http.Request) {
 		app.error(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
-	if req.Email == "" || req.Password == "" {
-		app.error(w, http.StatusBadRequest, "email and password are required")
+	var validationErr error
+	req.Email, validationErr = normalizeEmail(req.Email)
+	if validationErr != nil {
+		app.error(w, http.StatusBadRequest, "a valid email address is required")
+		return
+	}
+	if validationErr = validatePassword(req.Password); validationErr != nil {
+		app.error(w, http.StatusBadRequest, validationErr.Error())
 		return
 	}
 	user, err := app.repo.findByEmail(r.Context(), req.Email)
 	if err == pgx.ErrNoRows {
-		_ = bcrypt.CompareHashAndPassword(app.dummyHash, []byte(req.Password))
+		app.passwordMatches("", req.Password)
 		app.error(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
@@ -80,7 +91,7 @@ func (app *application) handleLogin(w http.ResponseWriter, r *http.Request) {
 		app.internalError(w, err)
 		return
 	}
-	if user.PasswordHash == "" || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
+	if !app.passwordMatches(user.PasswordHash, req.Password) {
 		app.error(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
@@ -91,6 +102,34 @@ func (app *application) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	app.setCookies(w, session)
 	app.write(w, http.StatusOK, map[string]any{"user": session.User})
+}
+
+func normalizeEmail(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	address, err := mail.ParseAddress(value)
+	if err != nil || address.Name != "" || address.Address != value {
+		return "", errors.New("invalid email address")
+	}
+	return value, nil
+}
+
+func validatePassword(password string) error {
+	if len([]byte(password)) < 8 || len([]byte(password)) > 72 {
+		return errors.New("password must be between 8 and 72 bytes")
+	}
+	return nil
+}
+
+func (app *application) passwordMatches(hash, password string) bool {
+	hashBytes := []byte(hash)
+	if hash == "" {
+		hashBytes = app.dummyHash
+	}
+	compare := bcrypt.CompareHashAndPassword
+	if app.compareHashAndPassword != nil {
+		compare = app.compareHashAndPassword
+	}
+	return compare(hashBytes, []byte(password)) == nil && hash != ""
 }
 
 func (app *application) handleRefresh(w http.ResponseWriter, r *http.Request) {

@@ -429,32 +429,30 @@ func (app *application) uploadVideo(w http.ResponseWriter, r *http.Request, kind
 	}
 	defer tx.Rollback(r.Context())
 	assetID := uuid.New()
-	var existing uuid.UUID
+	var previous uuid.UUID
 	if kind == "movie" {
-		err = tx.QueryRow(r.Context(), `select id from video_assets where id_movie=$1`, target).Scan(&existing)
+		err = tx.QueryRow(r.Context(), `select id from video_assets where id_movie=$1 and status in('pending','processing','ready','failed') order by created_at desc limit 1 for update`, target).Scan(&previous)
 	} else {
-		err = tx.QueryRow(r.Context(), `select id from video_assets where id_episode=$1`, target).Scan(&existing)
+		err = tx.QueryRow(r.Context(), `select id from video_assets where id_episode=$1 and status in('pending','processing','ready','failed') order by created_at desc limit 1 for update`, target).Scan(&previous)
 	}
 	if err != nil && err != pgx.ErrNoRows {
 		serverError(w, err)
 		return
-	}
-	if err == nil {
-		assetID = existing
 	}
 	key := filepath.ToSlash(filepath.Join("sources", assetID.String(), "source"+ext))
 	if err = app.store.Put(key, io.MultiReader(bytes.NewReader(mime.head), part)); err != nil {
 		writeUploadError(w, err)
 		return
 	}
-	if existing != uuid.Nil {
-		_, err = tx.Exec(r.Context(), `update video_assets set status='pending',source_path=$2,manifest_path=null,qualities='[]',error='superseded by re-upload',updated_at=now() where id=$1`, assetID, key)
+	if previous != uuid.Nil {
+		_, err = tx.Exec(r.Context(), `update video_assets set status='superseded',superseded_at=now(),error='superseded by re-upload',updated_at=now() where id=$1`, previous)
 		if err == nil {
-			_, err = tx.Exec(r.Context(), `update video_jobs set status='failed',last_error='superseded by re-upload',updated_at=now() where asset_id=$1 and status in('queued','leased')`, assetID)
+			_, err = tx.Exec(r.Context(), `update video_jobs set status='failed',lease_expires_at=null,last_error='superseded by re-upload',updated_at=now() where asset_id=$1 and status in('queued','leased')`, previous)
 		}
-	} else if kind == "movie" {
+	}
+	if err == nil && kind == "movie" {
 		_, err = tx.Exec(r.Context(), `insert into video_assets(id,kind,id_movie,status,source_path) values($1,'movie',$2,'pending',$3)`, assetID, target, key)
-	} else {
+	} else if err == nil {
 		_, err = tx.Exec(r.Context(), `insert into video_assets(id,kind,id_episode,status,source_path) values($1,'episode',$2,'pending',$3)`, assetID, target, key)
 	}
 	if err == nil {

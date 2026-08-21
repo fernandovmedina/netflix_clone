@@ -119,7 +119,7 @@ func (app *application) getSeries(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	rows, err := app.pool.Query(r.Context(), `select se.id_season,se.season_number,e.id_episode,e.episode_number,e.title,coalesce(e.description,''),coalesce(e.duration,0),coalesce(e.thumbnail_url,''),va.id::text from seasons se left join episodes e on e.id_season=se.id_season and e.deleted_at is null left join video_assets va on va.id_episode=e.id_episode and va.status='ready' where se.id_series=$1 and se.deleted_at is null order by se.season_number,e.episode_number`, id)
+	rows, err := app.pool.Query(r.Context(), `select se.id_season,se.season_number,e.id_episode,e.episode_number,e.title,coalesce(e.description,''),coalesce(e.duration,0),coalesce(e.thumbnail_url,''),va.id::text from seasons se left join episodes e on e.id_season=se.id_season and e.deleted_at is null left join video_assets va on va.id_episode=e.id_episode and va.status='ready' where se.id_series=$1 and se.deleted_at is null order by se.season_number,e.episode_number`, out.SeriesID)
 	if err != nil {
 		serverError(w, err)
 		return
