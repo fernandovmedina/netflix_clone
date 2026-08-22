@@ -99,6 +99,50 @@ export type AdminTitleInput = {
 
 export type CreatedTitle = { id: number; title_id: number };
 
+export type Plan = {
+  id: number;
+  code: string;
+  name: string;
+  price: number;
+  currency: string;
+  quality: string;
+  max_streams: number;
+};
+
+export type DiscountPreview = {
+  valid: boolean;
+  subtotal: number;
+  discount_amount: number;
+  total: number;
+  currency: string;
+  reason?: string;
+};
+
+export type Payment = {
+  id: string;
+  plan_id: number;
+  method: "card" | "oxxo";
+  status: "pending" | "paid" | "expired" | "failed";
+  subtotal: number;
+  discount_amount: number;
+  total: number;
+  amount: number;
+  currency: string;
+  reference?: string;
+  card_last4?: string;
+  card_brand?: string;
+  expires_at?: string;
+  paid_at?: string;
+  simulated: boolean;
+  created_at: string;
+};
+
+export type CardPaymentInput = {
+  plan_id: number;
+  code?: string;
+  card: { number: string; exp: string; cvv: string; name: string };
+};
+
 type ErrorBody = { error?: string; message?: string };
 type ApiOptions = RequestInit & { retryOnUnauthorized?: boolean };
 
@@ -276,6 +320,30 @@ export const userApi = {
       method: "PUT",
       body: JSON.stringify({ current_time_seconds: Math.max(0, Math.floor(currentTimeSeconds)) }),
     }),
+};
+
+export const paymentApi = {
+  plans: () => apiRequest<Plan[]>("/api/v1/plans"),
+  previewDiscount: (planId: number, code: string) =>
+    apiRequest<DiscountPreview>("/api/v1/discounts/validate", {
+      method: "POST",
+      body: JSON.stringify({ plan_id: planId, code }),
+    }),
+  payByCard: (input: CardPaymentInput) =>
+    apiRequest<Payment>("/api/v1/payments/card", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  createOxxo: (planId: number, code?: string) =>
+    apiRequest<Payment>("/api/v1/payments/oxxo", {
+      method: "POST",
+      body: JSON.stringify({ plan_id: planId, ...(code ? { code } : {}) }),
+    }),
+  simulateOxxo: (reference: string) =>
+    apiRequest<Payment>(`/api/v1/payments/oxxo/${encodeURIComponent(reference)}/simulate-payment`, {
+      method: "POST",
+    }),
+  payment: (id: string) => apiRequest<Payment>(`/api/v1/payments/${encodeURIComponent(id)}`),
 };
 
 export const adminApi = {

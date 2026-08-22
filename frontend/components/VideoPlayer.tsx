@@ -216,12 +216,12 @@ export function VideoPlayer({ assetId, title, progressKind, progressId }: VideoP
 
       <div className="absolute inset-x-0 bottom-0 z-20 bg-linear-to-t from-black via-black/75 to-transparent px-3 pb-4 pt-16 opacity-100 transition sm:px-6 sm:pb-6 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
         <input aria-label="Seek" type="range" min={0} max={duration || 0} step="0.1" value={Math.min(currentTime, duration || 0)} onChange={(event) => { if (videoRef.current) videoRef.current.currentTime = Number(event.target.value); }} className="h-2 w-full accent-red-600" />
-        <div className="mt-3 flex items-center gap-2 sm:gap-4">
+        <div className="mt-3 flex flex-wrap items-center gap-1 sm:gap-4">
           <button type="button" onClick={togglePlay} className="min-h-11 min-w-11 text-2xl" aria-label={playing ? "Pause" : "Play"}>{playing ? "❚❚" : "▶"}</button>
           <button type="button" onClick={toggleMute} className="min-h-11 min-w-11 text-xl" aria-label={muted ? "Unmute" : "Mute"}>{muted ? "🔇" : "🔊"}</button>
           <input aria-label="Volume" type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume} onChange={(event) => { const next = Number(event.target.value); if (videoRef.current) { videoRef.current.volume = next; videoRef.current.muted = next === 0; } }} className="hidden w-24 accent-white sm:block" />
-          <span className="whitespace-nowrap text-xs sm:text-sm">{timeLabel(currentTime)} / {timeLabel(duration)}</span>
-          <div className="ml-auto flex items-center gap-2 sm:gap-4">
+          <span className="order-last w-full whitespace-nowrap px-2 text-xs sm:order-none sm:w-auto sm:px-0 sm:text-sm">{timeLabel(currentTime)} / {timeLabel(duration)}</span>
+          <div className="ml-auto flex items-center gap-1 sm:gap-4">
             <label className="flex min-h-11 items-center gap-2 text-xs sm:text-sm">Quality
               <select aria-label="Playback quality" value={quality} onChange={(event) => selectQuality(Number(event.target.value))} className="rounded border border-white/40 bg-black/80 px-2 py-2 text-white">
                 <option value={-1}>Auto</option>

@@ -10,8 +10,8 @@ export default function ProfileSettings() {
   const [isMainProfile] = useState<boolean>(true);
 
   return (
-    <main className="bg-white text-black">
-      <nav className="py-5 border-b border-gray-300 mb-10 px-48">
+    <main className="min-h-dvh overflow-x-hidden bg-white text-black">
+      <nav className="mb-8 border-b border-gray-300 px-5 py-5 sm:px-10 lg:px-20">
         <Image
           src="/netflix_logo.svg"
           alt="Netflix Logo"
@@ -19,8 +19,8 @@ export default function ProfileSettings() {
           height={32}
         />
       </nav>
-      <section className="flex flex-col mx-auto justify-center w-[800px]">
-        <div className="flex flex-row items-center">
+      <section className="mx-auto flex w-full max-w-3xl flex-col justify-center px-5 pb-10 sm:px-8">
+        <div className="flex items-start sm:items-center">
           <Image
             onClick={() => router.back()}
             src="/back_arrow.png"
@@ -29,14 +29,14 @@ export default function ProfileSettings() {
             height={20}
             className="hover:cursor-pointer"
           />
-          <h1 className="text-3xl font-bold ml-2">
+          <h1 className="ml-2 text-2xl font-bold sm:text-3xl">
             Manage profile and preferences
           </h1>
         </div>
         <div className="flex flex-col mt-10">
           <div className="border-2 p-5 border-gray-500/30 rounded-lg">
-            <div className="flex items-center justify-between pb-5">
-              <div className="flex items-center gap-4">
+            <div className="flex items-start justify-between gap-3 pb-5 sm:items-center">
+              <div className="flex min-w-0 items-center gap-3 sm:gap-4">
                 <Image
                   src="/gray_profile.png"
                   alt="profile_image"
@@ -60,7 +60,7 @@ export default function ProfileSettings() {
               />
             </div>
             <hr />
-            <div className="flex items-center justify-between pt-5">
+            <div className="flex items-start justify-between gap-3 pt-5 sm:items-center">
               <div className="flex items-center gap-4">
                 <Image
                   src="/gray_block.png"
@@ -288,10 +288,10 @@ export default function ProfileSettings() {
           )}
         </div>
       </section>
-      <footer className="text-gray-800 py-15 px-40 bg-gray-500/10">
+      <footer className="bg-gray-100 px-5 py-10 text-gray-800 sm:px-10 lg:px-20">
         <a href="tel:8009539947">Questions? Call 800 953 9947 (Toll-Free)</a>
-        <div className="mt-5 flex flex-row w-full mb-10 text-sm">
-          <div className="w-1/4 flex flex-col underline">
+        <div className="mb-10 mt-5 grid w-full grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">
               FAQ
             </a>
@@ -299,7 +299,7 @@ export default function ProfileSettings() {
               Privacy
             </a>
           </div>
-          <div className="w-1/4 flex flex-col underline">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">
               Help Center
             </a>
@@ -307,7 +307,7 @@ export default function ProfileSettings() {
               Cookie Preferences
             </a>
           </div>
-          <div className="w-1/4 flex flex-col underline">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">
               Netflix Shop
             </a>
@@ -315,7 +315,7 @@ export default function ProfileSettings() {
               Corporate Information
             </a>
           </div>
-          <div className="w-1/4 underline">
+          <div className="underline">
             <a href="" className="hover:text-gray-200">
               Terms of Use
             </a>

@@ -40,15 +40,15 @@ export default function LoginHelp() {
 
   return (
     <main>
-      <div className="bg-[url(/home/hero_login.jpg)] bg-cover bg-center h-screen">
-        <nav className="flex flex-row items-center justify-between text-white px-40 py-5 border-b border-gray-400">
+      <div className="min-h-dvh bg-[url(/home/hero_login.jpg)] bg-cover bg-center pb-10">
+        <nav className="flex items-center justify-between border-b border-gray-400 px-5 py-5 text-white sm:px-10 lg:px-20">
           <Link href="/">
             <Image src="/netflix_logo.svg" width={150} height={41} alt="netflix_logo" />
           </Link>
           <Link href="/login" className="bg-red-600 rounded px-5 py-2 font-bold hover:bg-red-700">Sign In</Link>
         </nav>
         <div className={`${!forgot ? "text-black flex items-center justify-center" : "hidden"}`}>
-          <div className="bg-white mt-20 px-10 py-15 w-[35%]">
+          <div className="mx-4 mt-10 w-full max-w-lg bg-white px-5 py-10 sm:mt-20 sm:px-10">
             <h1 className="font-extrabold text-3xl">Update password, email or phone</h1>
             <p className="my-3 font-medium">How would you like to reset your password?</p>
             <div className="flex flex-row items-center pl-5">
@@ -84,13 +84,13 @@ export default function LoginHelp() {
             <p className="underline" onClick={() => setForgot(true)}>I don&apos;t remember my email or phone.</p>
           </div>
         </div>
-        <div className={`${forgot ? "flex items-center justify-center mt-20" : "hidden"}`}>
-          <div className="bg-white text-black w-[35%] px-10 py-15 flex flex-col">
+        <div className={`${forgot ? "mt-10 flex items-center justify-center px-4 sm:mt-20" : "hidden"}`}>
+          <div className="flex w-full max-w-lg flex-col bg-white px-5 py-10 text-black sm:px-10">
             <h1 className="font-extrabold text-3xl">Forgot email or mobile number</h1>
             <p className="my-5 text-sm">Please provide this information to help us find your account (all fields required):</p>
-            <input className="border border-gray-700 rounded px-5 py-2" type="text" placeholder="First name on account" />
-            <input className="border border-gray-700 my-4 rounded px-5 py-2" type="text" placeholder="Last name on account" />
-            <input className="border border-gray-700 rounded px-5 py-2" type="text" placeholder="Credit or debit card number on file" />
+            <input className="min-h-12 rounded border border-gray-700 px-5 py-2 text-base" type="text" placeholder="First name on account" />
+            <input className="my-4 min-h-12 rounded border border-gray-700 px-5 py-2 text-base" type="text" placeholder="Last name on account" />
+            <input className="min-h-12 rounded border border-gray-700 px-5 py-2 text-base" type="text" placeholder="Credit or debit card number on file" />
             <div className="flex flex-row items-center mt-5">
               <button className="bg-red-600 rounded px-3 py-2 text-white font-bold mr-3 hover:bg-red-400">Find Account</button>
               <button onClick={() => setForgot(false)} className="bg-gray-600/50 rounded px-3 py-2 font-bold hover:bg-gray-600/30">Cancel</button>
@@ -98,22 +98,22 @@ export default function LoginHelp() {
           </div>
         </div>
       </div>
-      <footer className="text-gray-400 py-15 px-40 bg-gray-700/40">
+      <footer className="bg-gray-700/40 px-5 py-10 text-gray-400 sm:px-10 lg:px-20">
         <a href="tel:8009539947">Questions? Call 800 953 9947 (Toll-Free)</a>
-        <div className="mt-5 flex flex-row w-full mb-10 text-sm">
-          <div className="w-1/4 flex flex-col underline">
+        <div className="mb-10 mt-5 grid w-full grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">FAQ</a>
             <a href="" className="hover:text-gray-200">Privacy</a>
           </div>
-          <div className="w-1/4 flex flex-col underline">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">Help Center</a>
             <a href="" className="hover:text-gray-200">Cookie Preferences</a>
           </div>
-          <div className="w-1/4 flex flex-col underline">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">Netflix Shop</a>
             <a href="" className="hover:text-gray-200">Corporate Information</a>
           </div>
-          <div className="w-1/4 underline">
+          <div className="underline">
             <a href="" className="hover:text-gray-200">Terms of Use</a>
           </div>
         </div>

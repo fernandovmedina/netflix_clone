@@ -20,7 +20,7 @@ export default function AdminDashboard() {
     {loading && <p className="mt-16 animate-pulse text-center text-zinc-300">Loading the complete catalog…</p>}
     {error && <p className="mt-10 rounded bg-red-950/60 p-5 text-red-200">{error}</p>}
     {!loading && !error && titles.length === 0 && <p className="mt-16 text-center text-zinc-400">No titles exist yet. Create the first one above.</p>}
-    {!loading && !error && titles.length > 0 && <div className="mt-9 overflow-hidden rounded-xl border border-zinc-800">
+    {!loading && !error && titles.length > 0 && <div className="mt-9 max-w-full overflow-x-auto rounded-xl border border-zinc-800">
       <div className="hidden grid-cols-[5rem_1fr_9rem_8rem_5rem] gap-4 bg-zinc-900 px-5 py-3 text-xs font-bold uppercase tracking-wider text-zinc-400 md:grid"><span>Artwork</span><span>Title</span><span>Type</span><span>Status</span><span /></div>
       <div className="divide-y divide-zinc-800">{titles.map((item) => {
         const kind = item.content_type.toLowerCase().includes("movie") ? "movies" : "series";

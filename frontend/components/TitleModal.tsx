@@ -56,6 +56,14 @@ export function TitleModal({ item, onClose }: TitleModalProps) {
   const playable = isPlayable(shown);
   const backdrop = useMemo(() => artworkUrl(shown.thumbnail_url), [shown.thumbnail_url]);
 
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", closeOnEscape); };
+  }, [onClose]);
+
   const toggleFavorite = async () => {
     try {
       if (favorite) await userApi.removeFavorite(titleId(shown));
@@ -67,13 +75,13 @@ export function TitleModal({ item, onClose }: TitleModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6" role="dialog" aria-modal="true" aria-label={shown.title ?? "Title details"}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center sm:p-6" role="dialog" aria-modal="true" aria-label={shown.title ?? "Title details"}>
       <button type="button" aria-label="Close title details" className="absolute inset-0 bg-black/85" onClick={onClose} />
-      <article className="relative z-10 max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-[#181818] shadow-2xl">
-        <button type="button" onClick={onClose} aria-label="Close" className="absolute right-4 top-4 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-black text-2xl hover:bg-zinc-800">
+      <article className="relative z-10 h-dvh w-full overflow-y-auto overscroll-contain bg-[#181818] shadow-2xl sm:h-auto sm:max-h-[92vh] sm:max-w-4xl sm:rounded-lg">
+        <button type="button" onClick={onClose} aria-label="Close" className="absolute right-3 top-3 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-black text-2xl hover:bg-zinc-800 sm:right-4 sm:top-4">
           ×
         </button>
-        <div className="relative h-[42vh] min-h-72 bg-cover bg-center sm:h-[55vh]" style={{ backgroundImage: `url("${backdrop}")` }}>
+        <div className="relative h-[44svh] min-h-64 bg-cover bg-center sm:h-[55vh] sm:min-h-72" style={{ backgroundImage: `url("${backdrop}")` }}>
           <div className="absolute inset-0 bg-linear-to-t from-[#181818] via-transparent to-black/20" />
           <div className="absolute inset-x-5 bottom-8 sm:inset-x-10">
             <h2 className="max-w-2xl text-3xl font-black sm:text-5xl">{shown.title ?? "Title details"}</h2>

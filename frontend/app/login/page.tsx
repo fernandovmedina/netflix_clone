@@ -90,7 +90,7 @@ export default function Login() {
 
   return (
     <main>
-      <div className="bg-[url('/home/hero.jpg')] bg-cover bg-center px-40 h-screen">
+      <div className="min-h-dvh bg-[url('/home/hero.jpg')] bg-cover bg-center px-4 pb-10 sm:px-8 lg:px-20">
         <nav className="py-5">
           <Link href="/">
             <Image
@@ -102,7 +102,7 @@ export default function Login() {
           </Link>
         </nav>
         <div className="flex items-center justify-center">
-          <div className="text-white flex flex-col bg-black/90 mt-10 px-15 py-10 w-[40%]">
+          <div className="mt-6 flex w-full max-w-md flex-col rounded bg-black/90 px-5 py-8 text-white sm:mt-10 sm:px-10 sm:py-10">
             <h1 className="font-extrabold text-3xl">Sign In</h1>
             <AlertMessage
               message={loginError}
@@ -111,14 +111,14 @@ export default function Login() {
             />
             {signInCode ? (
               <>
-                <input onChange={(e) => setMobileNumber(e.target.value)} className="mt-5 border-2 border-gray-500 px-5 py-3 rounded placeholder:text-gray-300 bg-gray-900/50" type="email" placeholder="Email or mobile number" />
+                <input onChange={(e) => setMobileNumber(e.target.value)} className="mt-5 min-h-12 rounded border-2 border-gray-500 bg-gray-900/50 px-5 py-3 text-base placeholder:text-gray-300" type="email" placeholder="Email or mobile number" />
                 <p className="text-xs text-red-600 mt-2">{mobileNumberAlert}</p>
               </>
             ) : (
               <>
-                <input onChange={(e) => setEmail(e.target.value)} className="mt-5 border-2 border-gray-500 px-5 py-3 rounded placeholder:text-gray-300 bg-gray-900/50" type="email" placeholder="Email or mobile number" />
+                <input onChange={(e) => setEmail(e.target.value)} className="mt-5 min-h-12 rounded border-2 border-gray-500 bg-gray-900/50 px-5 py-3 text-base placeholder:text-gray-300" type="email" placeholder="Email or mobile number" />
                 <p className="text-xs text-red-600 mt-2">{emailAlert}</p>
-                <input onChange={(e) => setPassword(e.target.value)} className={`${signInCode ? "hidden" : "mt-5 border-2 border-gray-500 px-5 py-3 rounded placeholder:text-gray-300 bg-gray-900/50"}`} type="password" placeholder="Password" />
+                <input onChange={(e) => setPassword(e.target.value)} className={`${signInCode ? "hidden" : "mt-5 min-h-12 rounded border-2 border-gray-500 bg-gray-900/50 px-5 py-3 text-base placeholder:text-gray-300"}`} type="password" placeholder="Password" />
                 <p className="text-xs text-red-600 mt-2">{passwordAlert}</p>
               </>
             )}
@@ -157,22 +157,22 @@ export default function Login() {
           </div>
         </div>
       </div>
-      <footer className="text-gray-400 py-15 px-40 bg-gray-700/40">
+      <footer className="bg-gray-700/40 px-5 py-10 text-gray-400 sm:px-10 lg:px-20">
         <a href="tel:8009539947">Questions? Call 800 953 9947 (Toll-Free)</a>
-        <div className="mt-5 flex flex-row w-full mb-10 text-sm">
-          <div className="w-1/4 flex flex-col underline">
+        <div className="mb-10 mt-5 grid w-full grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">FAQ</a>
             <a href="" className="hover:text-gray-200">Privacy</a>
           </div>
-          <div className="w-1/4 flex flex-col underline">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">Help Center</a>
             <a href="" className="hover:text-gray-200">Cookie Preferences</a>
           </div>
-          <div className="w-1/4 flex flex-col underline">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">Netflix Shop</a>
             <a href="" className="hover:text-gray-200">Corporate Information</a>
           </div>
-          <div className="w-1/4 underline">
+          <div className="underline">
             <a href="" className="hover:text-gray-200">Terms of Use</a>
           </div>
         </div>

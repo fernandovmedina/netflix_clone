@@ -14,16 +14,16 @@ export function Hero({ item, onMoreInfo }: HeroProps) {
 
   return (
     <section
-      className="relative min-h-[72vh] bg-cover bg-center px-5 pb-16 pt-64 sm:px-10 lg:min-h-[88vh] lg:px-20 lg:pt-80"
+      className="relative flex min-h-[72svh] items-end bg-cover bg-center px-5 pb-24 pt-28 sm:min-h-[78svh] sm:px-10 sm:pb-28 lg:min-h-[88svh] lg:px-20 lg:pb-36"
       style={{ backgroundImage: `url("${artworkUrl(item.thumbnail_url)}")` }}
     >
       <div className="absolute inset-0 bg-linear-to-r from-black via-black/55 to-transparent" />
       <div className="absolute inset-0 bg-linear-to-t from-black via-transparent to-black/20" />
-      <div className="relative z-10 max-w-xl">
+      <div className="relative z-10 w-full max-w-xl">
         <p className="mb-3 text-sm font-bold uppercase tracking-[0.3em] text-red-500">
           Featured now
         </p>
-        <h1 className="text-4xl font-black drop-shadow-lg sm:text-6xl">
+        <h1 className="text-3xl font-black drop-shadow-lg sm:text-5xl lg:text-6xl">
           {item.title ?? "Ready to watch"}
         </h1>
         {item.description && (
@@ -47,7 +47,7 @@ export function Hero({ item, onMoreInfo }: HeroProps) {
           <button
             type="button"
             onClick={() => onMoreInfo(item)}
-            className="flex items-center gap-2 rounded bg-gray-500/70 px-6 py-2.5 font-bold text-white hover:bg-gray-500/50"
+            className="flex min-h-11 items-center gap-2 rounded bg-gray-500/70 px-4 py-2.5 font-bold text-white hover:bg-gray-500/50 sm:px-6"
           >
             <Info size={22} /> More information
           </button>

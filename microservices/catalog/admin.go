@@ -204,7 +204,11 @@ func (app *application) createSeason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in seasonInput
-	if !decodeJSON(w, r, &in) || in.SeasonNumber < 1 {
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.SeasonNumber < 1 {
+		jsonx.Error(w, 400, "season_number must be at least 1")
 		return
 	}
 	var seasonID int
@@ -223,7 +227,10 @@ func (app *application) patchSeason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in seasonInput
-	if !decodeJSON(w, r, &in) || in.SeasonNumber < 1 {
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.SeasonNumber < 1 {
 		jsonx.Error(w, 400, "season_number is required")
 		return
 	}
@@ -283,7 +290,10 @@ func (app *application) createEpisode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in episodeInput
-	if !decodeJSON(w, r, &in) || in.EpisodeNumber < 1 || strings.TrimSpace(in.Title) == "" {
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.EpisodeNumber < 1 || strings.TrimSpace(in.Title) == "" {
 		jsonx.Error(w, 400, "episode_number and title are required")
 		return
 	}
@@ -303,7 +313,10 @@ func (app *application) patchEpisode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in episodeInput
-	if !decodeJSON(w, r, &in) || in.EpisodeNumber < 1 || strings.TrimSpace(in.Title) == "" {
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.EpisodeNumber < 1 || strings.TrimSpace(in.Title) == "" {
 		jsonx.Error(w, 400, "episode_number and title are required")
 		return
 	}
@@ -356,7 +369,10 @@ type genreInput struct {
 
 func (app *application) createGenre(w http.ResponseWriter, r *http.Request) {
 	var in genreInput
-	if !decodeJSON(w, r, &in) || strings.TrimSpace(in.Name) == "" {
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if strings.TrimSpace(in.Name) == "" {
 		jsonx.Error(w, 400, "name is required")
 		return
 	}
@@ -374,7 +390,10 @@ func (app *application) patchGenre(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in genreInput
-	if !decodeJSON(w, r, &in) || strings.TrimSpace(in.Name) == "" {
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if strings.TrimSpace(in.Name) == "" {
 		jsonx.Error(w, 400, "name is required")
 		return
 	}
@@ -411,10 +430,14 @@ func (app *application) uploadEpisodeVideo(w http.ResponseWriter, r *http.Reques
 	}
 }
 func (app *application) uploadVideo(w http.ResponseWriter, r *http.Request, kind string, target int) {
-	r.Body = http.MaxBytesReader(w, r.Body, app.maxUpload)
+	outerLimit := app.maxUpload + int64(1<<20)
+	if outerLimit < app.maxUpload {
+		outerLimit = app.maxUpload
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, outerLimit)
 	part, ext, mime, err := videoPart(r)
 	if err != nil {
-		jsonx.Error(w, 400, err.Error())
+		writeUploadInputError(w, err)
 		return
 	}
 	defer part.Close()
@@ -431,17 +454,49 @@ func (app *application) uploadVideo(w http.ResponseWriter, r *http.Request, kind
 	assetID := uuid.New()
 	var previous uuid.UUID
 	if kind == "movie" {
-		err = tx.QueryRow(r.Context(), `select id from video_assets where id_movie=$1 and status in('pending','processing','ready','failed') order by created_at desc limit 1 for update`, target).Scan(&previous)
+		var found int
+		err = tx.QueryRow(r.Context(), `select id_movie from movies where id_movie=$1 and deleted_at is null for share`, target).Scan(&found)
+		if err == nil {
+			err = tx.QueryRow(r.Context(), `select id from video_assets where id_movie=$1 and status in('pending','processing','ready','failed') order by created_at desc limit 1 for update`, target).Scan(&previous)
+		}
 	} else {
-		err = tx.QueryRow(r.Context(), `select id from video_assets where id_episode=$1 and status in('pending','processing','ready','failed') order by created_at desc limit 1 for update`, target).Scan(&previous)
+		var found int
+		err = tx.QueryRow(r.Context(), `select id_episode from episodes where id_episode=$1 and deleted_at is null for share`, target).Scan(&found)
+		if err == nil {
+			err = tx.QueryRow(r.Context(), `select id from video_assets where id_episode=$1 and status in('pending','processing','ready','failed') order by created_at desc limit 1 for update`, target).Scan(&previous)
+		}
+	}
+	if err == pgx.ErrNoRows {
+		var targetExists bool
+		if kind == "movie" {
+			err = tx.QueryRow(r.Context(), `select exists(select 1 from movies where id_movie=$1 and deleted_at is null)`, target).Scan(&targetExists)
+		} else {
+			err = tx.QueryRow(r.Context(), `select exists(select 1 from episodes where id_episode=$1 and deleted_at is null)`, target).Scan(&targetExists)
+		}
+		if err == nil && !targetExists {
+			jsonx.Error(w, http.StatusNotFound, kind+" not found")
+			return
+		}
+		previous = uuid.Nil
 	}
 	if err != nil && err != pgx.ErrNoRows {
 		serverError(w, err)
 		return
 	}
 	key := filepath.ToSlash(filepath.Join("sources", assetID.String(), "source"+ext))
-	if err = app.store.Put(key, io.MultiReader(bytes.NewReader(mime.head), part)); err != nil {
+	limited := &io.LimitedReader{R: io.MultiReader(bytes.NewReader(mime.head), part), N: app.maxUpload + 1}
+	if err = app.store.Put(key, limited); err != nil {
 		writeUploadError(w, err)
+		return
+	}
+	durable := false
+	defer func() {
+		if !durable {
+			_ = app.store.Remove(key)
+		}
+	}()
+	if limited.N == 0 {
+		jsonx.Error(w, http.StatusRequestEntityTooLarge, "upload exceeds size limit")
 		return
 	}
 	if previous != uuid.Nil {
@@ -466,6 +521,7 @@ func (app *application) uploadVideo(w http.ResponseWriter, r *http.Request, kind
 		serverError(w, err)
 		return
 	}
+	durable = true
 	jsonx.Write(w, 202, map[string]any{"asset_id": assetID, "status": "pending"})
 }
 
@@ -628,4 +684,13 @@ func writeUploadError(w http.ResponseWriter, err error) {
 		return
 	}
 	serverError(w, err)
+}
+
+func writeUploadInputError(w http.ResponseWriter, err error) {
+	var maxErr *http.MaxBytesError
+	if errors.As(err, &maxErr) {
+		jsonx.Error(w, http.StatusRequestEntityTooLarge, "upload exceeds size limit")
+		return
+	}
+	jsonx.Error(w, http.StatusBadRequest, err.Error())
 }

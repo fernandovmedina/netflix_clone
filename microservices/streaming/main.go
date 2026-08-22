@@ -2,19 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	shareddb "github.com/fernandovmedina/netflix-clone/microservices/shared/database"
 	"github.com/fernandovmedina/netflix-clone/microservices/shared/jsonx"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -22,15 +22,9 @@ var qualityPattern = regexp.MustCompile(`^\d{3,4}p$`)
 var segmentPattern = regexp.MustCompile(`^seg_\d{5}\.ts$`)
 var thumbnailPattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
-type cacheEntry struct {
-	ready   bool
-	expires time.Time
-}
 type application struct {
 	pool     *pgxpool.Pool
 	root     string
-	mu       sync.Mutex
-	cache    map[uuid.UUID]cacheEntry
 	hostname string
 }
 
@@ -47,7 +41,7 @@ func main() {
 		log.Fatal(err)
 	}
 	host, _ := os.Hostname()
-	app := &application{pool: pool, root: root, cache: map[uuid.UUID]cacheEntry{}, hostname: host}
+	app := &application{pool: pool, root: root, hostname: host}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		jsonx.Write(w, 200, map[string]string{"status": "ok", "container": host})
@@ -152,26 +146,21 @@ func (app *application) asset(w http.ResponseWriter, r *http.Request) (uuid.UUID
 	return id, true
 }
 func (app *application) ready(ctx context.Context, id uuid.UUID) (bool, error) {
-	app.mu.Lock()
-	entry, ok := app.cache[id]
-	if ok && time.Now().Before(entry.expires) {
-		app.mu.Unlock()
-		return entry.ready, nil
-	}
-	app.mu.Unlock()
 	var ready bool
-	err := app.pool.QueryRow(ctx, `select status='ready' from video_assets where id=$1`, id).Scan(&ready)
-	if err == pgx.ErrNoRows {
-		ready = false
-		err = nil
-	}
-	if err != nil {
-		return false, err
-	}
-	app.mu.Lock()
-	app.cache[id] = cacheEntry{ready: ready, expires: time.Now().Add(2 * time.Second)}
-	app.mu.Unlock()
-	return ready, nil
+	err := app.pool.QueryRow(ctx, `select exists(
+		select 1 from video_assets va
+		join movies m on m.id_movie=va.id_movie and m.deleted_at is null
+		join titles t on t.id_title=m.id_title and t.deleted_at is null and t.published=true
+		where va.id=$1 and va.status='ready'
+		union all
+		select 1 from video_assets va
+		join episodes e on e.id_episode=va.id_episode and e.deleted_at is null
+		join seasons se on se.id_season=e.id_season and se.deleted_at is null
+		join series s on s.id_series=se.id_series and s.deleted_at is null
+		join titles t on t.id_title=s.id_title and t.deleted_at is null and t.published=true
+		where va.id=$1 and va.status='ready'
+	)`, id).Scan(&ready)
+	return ready, err
 }
 func (app *application) serve(w http.ResponseWriter, r *http.Request, components []string, contentType, cacheControl string) {
 	path, ok := safeJoin(app.root, components...)
@@ -179,8 +168,17 @@ func (app *application) serve(w http.ResponseWriter, r *http.Request, components
 		jsonx.Error(w, 400, "invalid path")
 		return
 	}
-	file, err := os.Open(path)
-	if os.IsNotExist(err) {
+	resolved, err := resolvedPath(app.root, path)
+	if errors.Is(err, fs.ErrNotExist) {
+		jsonx.Error(w, 404, "file not found")
+		return
+	}
+	if err != nil {
+		jsonx.Error(w, 400, "invalid path")
+		return
+	}
+	file, err := os.Open(resolved)
+	if errors.Is(err, fs.ErrNotExist) {
 		jsonx.Error(w, 404, "file not found")
 		return
 	}
@@ -197,6 +195,22 @@ func (app *application) serve(w http.ResponseWriter, r *http.Request, components
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", cacheControl)
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+}
+
+func resolvedPath(root, path string) (string, error) {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	relative, err := filepath.Rel(resolvedRoot, resolved)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", errors.New("resolved path escapes media root")
+	}
+	return resolved, nil
 }
 func safeJoin(root string, components ...string) (string, bool) {
 	for _, component := range components {

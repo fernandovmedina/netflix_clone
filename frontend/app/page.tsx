@@ -44,23 +44,23 @@ export default function Home() {
       <div className="relative w-full pb-10">
         <button
           onClick={scrollLeft}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black p-3 rounded-full"
+          className="absolute left-0 top-1/2 z-10 hidden -translate-y-1/2 rounded-full bg-black/50 p-3 hover:bg-black sm:block"
         >
           <span className="text-white text-2xl">‹</span>
         </button>
 
         <div
           ref={carouselRef}
-          className="flex overflow-x-auto no-scrollbar scroll-smooth snap-x snap-mandatory"
+          className="no-scrollbar flex touch-pan-x snap-x snap-mandatory overflow-x-auto scroll-smooth"
         >
           {items.map((item) => (
-            <div key={item.id} className="w-1/5 shrink-0 px-2 snap-start">
+            <div key={item.id} className="w-[46vw] shrink-0 snap-start px-2 sm:w-[30vw] md:w-1/4 lg:w-1/5">
               <Image
                 src={item.imgSrc}
                 alt="carousel item"
                 width={197}
                 height={276}
-                className="h-auto w-[220px] rounded-xl hover:w-80"
+                className="h-auto w-full rounded-xl transition sm:hover:scale-105"
               />
             </div>
           ))}
@@ -68,7 +68,7 @@ export default function Home() {
 
         <button
           onClick={scrollRight}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black p-3 rounded-full"
+          className="absolute right-0 top-1/2 z-10 hidden -translate-y-1/2 rounded-full bg-black/50 p-3 hover:bg-black sm:block"
         >
           <span className="text-white text-2xl">›</span>
         </button>
@@ -79,7 +79,7 @@ export default function Home() {
   const SliderCards = () => {
     return (
       <div className="pb-10">
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="bg-linear-to-br from-indigo-900 px-3 py-5 to-purple-950 rounded-xl">
             <h1 className="font-extrabold text-2xl">Enjoy on your TV</h1>
             <p className="text-gray-400 mt-3">
@@ -141,7 +141,7 @@ export default function Home() {
               onClick={() => toggle(item.id)}
               className="flex flex-row items-center justify-between bg-gray-800 my-3 px-5 py-3 hover:bg-gray-700 hover:cursor-pointer"
             >
-              <h1 className="font-bold text-2xl">{item.title}</h1>
+              <h1 className="text-lg font-bold sm:text-2xl">{item.title}</h1>
               <Image src="/home/more.png" alt="expand_icon" width={50} height={50} className="h-auto" />
             </div>
             {openId === item.id && (
@@ -170,7 +170,7 @@ export default function Home() {
 
   return (
     <main className="bg-black">
-      <div className="relative bg-[url(/home/hero.jpg)] bg-cover bg-center px-36 py-5">
+      <div className="relative bg-[url(/home/hero.jpg)] bg-cover bg-center px-4 py-5 sm:px-10 lg:px-20">
         <div className="absolute inset-0 bg-black/70"></div>
         <div className="relative">
           <nav className="flex flex-row w-full items-center pt-2">
@@ -181,12 +181,12 @@ export default function Home() {
                   alt="netflix_logo"
                   width={150}
                   height={41}
-                  className="h-auto"
+                  className="h-auto w-24 sm:w-36"
                 />
               </Link>
             </div>
             <div className="w-1/2 flex flex-row items-stretch justify-end">
-              <div className="flex flex-row border-2 border-gray-400 bg-black/60 px-2 rounded-lg mr-3 h-full">
+              <div className="mr-3 hidden h-full flex-row rounded-lg border-2 border-gray-400 bg-black/60 px-2 sm:flex">
                 <Image
                   src="/language.png"
                   alt="language_icon"
@@ -208,8 +208,8 @@ export default function Home() {
               </Link>
             </div>
           </nav>
-          <div className="pt-40 text-white flex flex-col justify-center items-center mx-auto max-w-[800px] pb-48">
-            <h1 className="text-6xl font-extrabold text-center">
+          <div className="mx-auto flex max-w-3xl flex-col items-center justify-center pb-28 pt-28 text-white sm:pb-40 sm:pt-36">
+            <h1 className="text-center text-4xl font-extrabold sm:text-5xl lg:text-6xl">
               Unlimited movies, TV shows, and more
             </h1>
             <h2 className="text-xl font-extrabold mt-5 mb-7 text-center">
@@ -219,15 +219,15 @@ export default function Home() {
               Ready to watch? Enter your email to create or restart your
               membership.
             </p>
-            <div className="flex flex-row items-stretch">
+            <div className="flex w-full max-w-2xl flex-col items-stretch gap-3 sm:flex-row">
               <input
                 id="email_input"
-                className="bg-transparent border-2 font-bold border-gray-600 rounded px-3 h-full py-3 w-[400px] text-white placeholder:text-gray-400"
+                className="min-h-12 min-w-0 flex-1 rounded border-2 border-gray-600 bg-black/40 px-3 py-3 text-base font-bold text-white placeholder:text-gray-400"
                 onChange={e => setEmail(e.target.value)}
                 placeholder="Email address"
               />
 
-              <button onClick={verifyEmail} className="flex flex-row font-extrabold items-center bg-red-700 hover:bg-red-500 hover:cursor-pointer px-4 rounded ml-3 h-full py-3">
+              <button onClick={verifyEmail} className="flex min-h-12 items-center justify-center rounded bg-red-700 px-4 py-3 font-extrabold hover:bg-red-500 sm:ml-0">
                 Get Started
                 <Image
                   src="/home/greater.png"
@@ -241,8 +241,8 @@ export default function Home() {
           </div>
         </div>
       </div>
-      <div className="bg-black text-white px-28 relative">
-        <div className="flex flex-row items-center w-full pt-10 pb-16 relative z-10">
+      <div className="relative bg-black px-5 text-white sm:px-10 lg:px-20">
+        <div className="relative z-10 flex w-full flex-col items-center gap-4 pb-16 pt-10 sm:flex-row">
           <Image
             src="/home/popcorn.png"
             alt="popcorn_image"
@@ -251,7 +251,7 @@ export default function Home() {
             className="h-auto"
           />
 
-          <div className="flex flex-row items-center justify-between bg-linear-to-r from-purple-900 via-purple-700 to-sky-900 w-full px-10 py-4 rounded-xl ml-5">
+          <div className="flex w-full flex-col items-start justify-between gap-4 rounded-xl bg-linear-to-r from-purple-900 via-purple-700 to-sky-900 px-5 py-4 sm:ml-5 sm:flex-row sm:items-center sm:px-8">
             <div className="flex flex-col">
               <h1 className="font-extrabold text-xl">
                 The Netflix you love for just MXN 119.
@@ -278,13 +278,13 @@ export default function Home() {
 
         <div className="flex flex-col justify-center text-center mt-20 mb-32">
           <h2 className="font-bold mb-5">Ready to watch? Enter your email to create or restart your membership.</h2>
-          <div className="flex flex-row items-stretch justify-center">
+          <div className="mx-auto flex w-full max-w-2xl flex-col items-stretch justify-center gap-3 sm:flex-row">
             <input
-              className="bg-transparent border-2 font-bold border-gray-600 rounded px-3 h-full py-3 w-[400px] text-white placeholder:text-gray-400"
+              className="min-h-12 min-w-0 flex-1 rounded border-2 border-gray-600 bg-transparent px-3 py-3 text-base font-bold text-white placeholder:text-gray-400"
               placeholder="Email address"
             />
 
-            <button className="flex flex-row font-extrabold items-center bg-red-700 px-4 rounded ml-3 h-full py-3">
+            <button className="flex min-h-12 items-center justify-center rounded bg-red-700 px-4 py-3 font-extrabold">
               Get Started
               <Image
                 src="/home/greater.png"
@@ -299,28 +299,28 @@ export default function Home() {
 
         <footer className="mb-48">
           <h1 className="font-bold mb-5">Questions? Call <a href="tel:8008539947" className="underline">800 953 9947</a></h1>
-          <div className="flex flex-row w-full text-sm underline text-gray-400">
-            <div className="w-1/4 flex flex-col">
+          <div className="grid w-full grid-cols-2 gap-5 text-sm text-gray-400 underline sm:grid-cols-4">
+            <div className="flex flex-col">
               <a href="" className="hover:text-gray-200 mb-3">FAQ</a>
               <a href="" className="hover:text-gray-200 mb-3">Investor Relations</a>
               <a href="" className="hover:text-gray-200 mb-3">Buy Gift Cards</a>
               <a href="" className="hover:text-gray-200 mb-3">Cookie Preferences</a>
               <a href="" className="hover:text-gray-200 mb-3">Legal Notices</a>
             </div>
-            <div className="w-1/4 flex flex-col">
+            <div className="flex flex-col">
               <a href="" className="hover:text-gray-200 mb-3">Help Center</a>
               <a href="" className="hover:text-gray-200 mb-3">Jobs</a>
               <a href="" className="hover:text-gray-200 mb-3">Ways to Watch</a>
               <a href="" className="hover:text-gray-200 mb-3">Corporate Information</a>
               <a href="" className="hover:text-gray-200 mb-3">Only on Netflix</a>
             </div>
-            <div className="w-1/4 flex flex-col">
+            <div className="flex flex-col">
               <a href="" className="hover:text-gray-200 mb-3">Account</a>
               <a href="" className="hover:text-gray-200 mb-3">Netflix Shop</a>
               <a href="" className="hover:text-gray-200 mb-3">Terms of Use</a>
               <a href="" className="hover:text-gray-200 mb-3">Contact Us</a>
             </div>
-            <div className="w-1/4 flex flex-col">
+            <div className="flex flex-col">
               <a href="" className="hover:text-gray-200 mb-3">Media Center</a>
               <a href="" className="hover:text-gray-200 mb-3">Reddem Gift Cards</a>
               <a href="" className="hover:text-gray-200 mb-3">Privacy</a>

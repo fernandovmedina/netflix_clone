@@ -28,11 +28,11 @@ export function Carousel({ row, onSelect }: CarouselProps) {
           type="button"
           aria-label={`Scroll ${row.title} left`}
           onClick={() => scroll(-1)}
-          className="absolute left-0 top-1/2 z-20 hidden h-16 w-10 -translate-y-1/2 items-center justify-center bg-black/70 text-3xl hover:bg-black/90 group-hover:flex sm:w-12"
+          className="absolute left-0 top-1/2 z-20 hidden h-16 w-10 -translate-y-1/2 items-center justify-center bg-black/70 text-3xl hover:bg-black/90 sm:group-hover:flex sm:w-12"
         >
           ‹
         </button>
-        <div ref={scrollRef} className="flex snap-x gap-2 overflow-x-auto px-5 pb-2 sm:px-10 lg:px-14">
+        <div ref={scrollRef} className="flex snap-x snap-mandatory touch-pan-x gap-2 overflow-x-auto overscroll-x-contain scroll-px-5 px-5 pb-3 sm:scroll-px-10 sm:px-10 lg:scroll-px-14 lg:px-14">
           {row.items.map((item, index) => (
             <button
               type="button"
@@ -60,7 +60,7 @@ export function Carousel({ row, onSelect }: CarouselProps) {
           type="button"
           aria-label={`Scroll ${row.title} right`}
           onClick={() => scroll(1)}
-          className="absolute right-0 top-1/2 z-20 hidden h-16 w-10 -translate-y-1/2 items-center justify-center bg-black/70 text-3xl hover:bg-black/90 group-hover:flex sm:w-12"
+          className="absolute right-0 top-1/2 z-20 hidden h-16 w-10 -translate-y-1/2 items-center justify-center bg-black/70 text-3xl hover:bg-black/90 sm:group-hover:flex sm:w-12"
         >
           ›
         </button>

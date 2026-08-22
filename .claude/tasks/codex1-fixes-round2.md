@@ -110,6 +110,17 @@ Fix: return immediately when decode fails. Apply the same pattern across the sea
 
 ---
 
+## 10. Catalog response gaps blocking the admin UI (from Codex 3)
+
+Two fields the frontend needs and cannot synthesize:
+
+- **Expose `movie_id`** on list and movie-detail responses. Catalog currently returns only the title id, but the movie upload, update and progress endpoints key on the movie id. The frontend is currently declining to send a progress id at all rather than guess wrong — so movie watch progress is inert until this lands.
+- **Expose the latest asset id and status on admin responses**, including `pending`, `processing` and `failed`. Today only *ready* assets are joined, so after a page reload the admin dashboard cannot tell that a job is still in flight and shows nothing. Admin views must see every state; the public views keep their `ready`-only filter.
+
+Keep the public and admin projections distinct — do not leak in-flight asset state to non-admin responses.
+
+---
+
 ## Definition of done
 
 - `go build ./... && go vet ./... && go test -race ./...` clean in every module.

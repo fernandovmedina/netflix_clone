@@ -19,7 +19,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return <div className="min-h-dvh bg-black text-white">
     <header className="sticky top-0 z-40 border-b border-zinc-800 bg-black/95 backdrop-blur">
-      <nav className="mx-auto flex max-w-7xl items-center gap-5 px-4 py-4 sm:px-7">
+      <nav className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-4 sm:flex-nowrap sm:gap-5 sm:px-7">
         <Link href="/admin"><Image src="/netflix_logo.svg" alt="Netflix" width={108} height={30} priority /></Link>
         <span className="rounded bg-red-600 px-2 py-1 text-xs font-black uppercase tracking-wider">Admin</span>
         <Link href="/admin" className="ml-auto text-sm text-zinc-300 hover:text-white">Titles</Link>
@@ -27,6 +27,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <button type="button" onClick={async () => { await logout(); router.replace("/login"); }} className="text-sm text-zinc-300 hover:text-white">Log out</button>
       </nav>
     </header>
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-7 sm:py-12">{children}</main>
+    <main className="mx-auto max-w-7xl overflow-x-hidden px-4 py-8 sm:px-7 sm:py-12">{children}</main>
   </div>;
 }

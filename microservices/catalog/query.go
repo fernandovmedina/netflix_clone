@@ -20,15 +20,35 @@ type titleItem struct {
 	Year        *int16  `json:"year_released,omitempty"`
 	Thumbnail   string  `json:"thumbnail_url"`
 	Published   bool    `json:"published,omitempty"`
+	MovieID     *int    `json:"movie_id,omitempty"`
 	AssetID     *string `json:"asset_id"`
+	AssetStatus *string `json:"asset_status,omitempty"`
 }
 
-const assetJoin = `left join lateral (
- select va.id::text asset_id from video_assets va
- where va.status='ready' and ((m.id_movie is not null and va.id_movie=m.id_movie) or
- (s.id_series is not null and va.id_episode in (select e.id_episode from seasons se join episodes e on e.id_season=se.id_season where se.id_series=s.id_series and e.deleted_at is null)))
+func assetJoin(admin bool) string {
+	statusFilter, statusProjection := "va.status='ready'", "null::text"
+	if admin {
+		statusFilter, statusProjection = "va.status<>'superseded'", "va.status::text"
+	}
+	return `left join lateral (
+ select va.id::text asset_id,` + statusProjection + ` asset_status from video_assets va
+ where ` + statusFilter + ` and ((m.id_movie is not null and va.id_movie=m.id_movie) or
+ (s.id_series is not null and va.id_episode in (select e.id_episode from seasons se join episodes e on e.id_season=se.id_season where se.id_series=s.id_series and se.deleted_at is null and e.deleted_at is null)))
  order by va.updated_at desc nulls last,va.created_at desc limit 1
 ) asset on true`
+}
+
+func episodeAssetJoin(admin bool) string {
+	statusFilter, statusProjection := "va.status='ready'", "null::text"
+	if admin {
+		statusFilter, statusProjection = "va.status<>'superseded'", "va.status::text"
+	}
+	return `left join lateral (
+		select va.id::text asset_id,` + statusProjection + ` asset_status from video_assets va
+		where va.id_episode=e.id_episode and ` + statusFilter + `
+		order by va.updated_at desc nulls last,va.created_at desc limit 1
+	) episode_asset on true`
+}
 
 func adminRequest(r *http.Request) bool { return r.Header.Get("X-User-Role") == "admin" }
 func visibility(admin bool) string {
@@ -44,7 +64,8 @@ func (app *application) listTitles(w http.ResponseWriter, r *http.Request) {
 	kind := r.URL.Query().Get("type")
 	genre := r.URL.Query().Get("genre")
 	q := r.URL.Query().Get("q")
-	rows, err := app.pool.Query(r.Context(), `select t.id_title,t.id_title,t.title,t.type::text,coalesce(t.description,''),coalesce(t.director,''),t.year_released,coalesce(t.thumbnail_url,''),t.published,asset.asset_id from titles t left join movies m on m.id_title=t.id_title and m.deleted_at is null left join series s on s.id_title=t.id_title and s.deleted_at is null `+assetJoin+` where t.deleted_at is null and (`+visibility(adminRequest(r))+`) and ($1='' or t.type::text=$1) and ($2='' or exists(select 1 from title_genres tg join genres g on g.id_genre=tg.id_genre where tg.id_title=t.id_title and lower(g.name)=lower($2))) and ($3='' or t.title ilike '%'||$3||'%') order by t.created_at desc limit $4 offset $5`, kind, genre, q, limit, offset)
+	admin := adminRequest(r)
+	rows, err := app.pool.Query(r.Context(), `select t.id_title,t.id_title,t.title,t.type::text,coalesce(t.description,''),coalesce(t.director,''),t.year_released,coalesce(t.thumbnail_url,''),t.published,m.id_movie,asset.asset_id,asset.asset_status from titles t left join movies m on m.id_title=t.id_title and m.deleted_at is null left join series s on s.id_title=t.id_title and s.deleted_at is null `+assetJoin(admin)+` where t.deleted_at is null and (`+visibility(admin)+`) and ($1='' or t.type::text=$1) and ($2='' or exists(select 1 from title_genres tg join genres g on g.id_genre=tg.id_genre where tg.id_title=t.id_title and lower(g.name)=lower($2))) and ($3='' or t.title ilike '%'||$3||'%') order by t.created_at desc limit $4 offset $5`, kind, genre, q, limit, offset)
 	if err != nil {
 		serverError(w, err)
 		return
@@ -66,7 +87,8 @@ func (app *application) singleTitle(w http.ResponseWriter, r *http.Request, colu
 	if !ok {
 		return
 	}
-	row := app.pool.QueryRow(r.Context(), `select t.id_title,t.id_title,t.title,t.type::text,coalesce(t.description,''),coalesce(t.director,''),t.year_released,coalesce(t.thumbnail_url,''),t.published,asset.asset_id from titles t left join movies m on m.id_title=t.id_title and m.deleted_at is null left join series s on s.id_title=t.id_title and s.deleted_at is null `+assetJoin+` where t.deleted_at is null and `+column+`=$1 and (`+visibility(adminRequest(r))+`)`, id)
+	admin := adminRequest(r)
+	row := app.pool.QueryRow(r.Context(), `select t.id_title,t.id_title,t.title,t.type::text,coalesce(t.description,''),coalesce(t.director,''),t.year_released,coalesce(t.thumbnail_url,''),t.published,m.id_movie,asset.asset_id,asset.asset_status from titles t left join movies m on m.id_title=t.id_title and m.deleted_at is null left join series s on s.id_title=t.id_title and s.deleted_at is null `+assetJoin(admin)+` where t.deleted_at is null and `+column+`=$1 and (`+visibility(admin)+`)`, id)
 	item, err := scanTitle(row)
 	if err == pgx.ErrNoRows {
 		jsonx.Error(w, 404, "title not found")
@@ -79,7 +101,7 @@ func (app *application) singleTitle(w http.ResponseWriter, r *http.Request, colu
 	jsonx.Write(w, 200, item)
 }
 func (app *application) getMovie(w http.ResponseWriter, r *http.Request) {
-	app.singleTitle(w, r, "t.id_title")
+	app.singleTitle(w, r, "m.id_movie")
 }
 
 type episodeResponse struct {
@@ -90,6 +112,7 @@ type episodeResponse struct {
 	Duration      int     `json:"duration"`
 	Thumbnail     string  `json:"thumbnail_url"`
 	AssetID       *string `json:"asset_id"`
+	AssetStatus   *string `json:"asset_status,omitempty"`
 }
 type seasonResponse struct {
 	ID           int               `json:"id"`
@@ -108,9 +131,10 @@ func (app *application) getSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	row := app.pool.QueryRow(r.Context(), `select t.id_title,t.id_title,t.title,t.type::text,coalesce(t.description,''),coalesce(t.director,''),t.year_released,coalesce(t.thumbnail_url,''),t.published,asset.asset_id,s.id_series,coalesce(s.number_of_seasons,0) from titles t join series s on s.id_title=t.id_title and s.deleted_at is null left join movies m on false `+assetJoin+` where t.deleted_at is null and t.id_title=$1 and (`+visibility(adminRequest(r))+`)`, id)
+	admin := adminRequest(r)
+	row := app.pool.QueryRow(r.Context(), `select t.id_title,t.id_title,t.title,t.type::text,coalesce(t.description,''),coalesce(t.director,''),t.year_released,coalesce(t.thumbnail_url,''),t.published,m.id_movie,asset.asset_id,asset.asset_status,s.id_series,coalesce(s.number_of_seasons,0) from titles t join series s on s.id_title=t.id_title and s.deleted_at is null left join movies m on false `+assetJoin(admin)+` where t.deleted_at is null and t.id_title=$1 and (`+visibility(admin)+`)`, id)
 	var out seriesResponse
-	err := row.Scan(&out.ID, &out.TitleID, &out.Title, &out.ContentType, &out.Description, &out.Director, &out.Year, &out.Thumbnail, &out.Published, &out.AssetID, &out.SeriesID, &out.NumberOfSeasons)
+	err := row.Scan(&out.ID, &out.TitleID, &out.Title, &out.ContentType, &out.Description, &out.Director, &out.Year, &out.Thumbnail, &out.Published, &out.MovieID, &out.AssetID, &out.AssetStatus, &out.SeriesID, &out.NumberOfSeasons)
 	if err == pgx.ErrNoRows {
 		jsonx.Error(w, 404, "series not found")
 		return
@@ -119,7 +143,7 @@ func (app *application) getSeries(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	rows, err := app.pool.Query(r.Context(), `select se.id_season,se.season_number,e.id_episode,e.episode_number,e.title,coalesce(e.description,''),coalesce(e.duration,0),coalesce(e.thumbnail_url,''),va.id::text from seasons se left join episodes e on e.id_season=se.id_season and e.deleted_at is null left join video_assets va on va.id_episode=e.id_episode and va.status='ready' where se.id_series=$1 and se.deleted_at is null order by se.season_number,e.episode_number`, out.SeriesID)
+	rows, err := app.pool.Query(r.Context(), `select se.id_season,se.season_number,e.id_episode,e.episode_number,e.title,coalesce(e.description,''),coalesce(e.duration,0),coalesce(e.thumbnail_url,''),episode_asset.asset_id,episode_asset.asset_status from seasons se left join episodes e on e.id_season=se.id_season and e.deleted_at is null `+episodeAssetJoin(admin)+` where se.id_series=$1 and se.deleted_at is null order by se.season_number,e.episode_number`, out.SeriesID)
 	if err != nil {
 		serverError(w, err)
 		return
@@ -131,8 +155,8 @@ func (app *application) getSeries(w http.ResponseWriter, r *http.Request) {
 		var eid, en *int
 		var title, desc, thumb *string
 		var dur *int
-		var asset *string
-		if err := rows.Scan(&sid, &sn, &eid, &en, &title, &desc, &dur, &thumb, &asset); err != nil {
+		var asset, assetStatus *string
+		if err := rows.Scan(&sid, &sn, &eid, &en, &title, &desc, &dur, &thumb, &asset, &assetStatus); err != nil {
 			serverError(w, err)
 			return
 		}
@@ -141,7 +165,7 @@ func (app *application) getSeries(w http.ResponseWriter, r *http.Request) {
 			current = &out.Seasons[len(out.Seasons)-1]
 		}
 		if eid != nil {
-			current.Episodes = append(current.Episodes, episodeResponse{ID: *eid, EpisodeNumber: *en, Title: deref(title), Description: deref(desc), Duration: derefInt(dur), Thumbnail: deref(thumb), AssetID: asset})
+			current.Episodes = append(current.Episodes, episodeResponse{ID: *eid, EpisodeNumber: *en, Title: deref(title), Description: deref(desc), Duration: derefInt(dur), Thumbnail: deref(thumb), AssetID: asset, AssetStatus: assetStatus})
 		}
 	}
 	jsonx.Write(w, 200, out)
@@ -188,7 +212,7 @@ type homeRow struct {
 
 func (app *application) home(w http.ResponseWriter, r *http.Request) {
 	admin := adminRequest(r)
-	base := `select t.id_title,t.id_title,t.title,t.type::text,coalesce(t.description,''),coalesce(t.director,''),t.year_released,coalesce(t.thumbnail_url,''),t.published,asset.asset_id from titles t left join movies m on m.id_title=t.id_title and m.deleted_at is null left join series s on s.id_title=t.id_title and s.deleted_at is null ` + assetJoin + ` where t.deleted_at is null and (` + visibility(admin) + `) `
+	base := `select t.id_title,t.id_title,t.title,t.type::text,coalesce(t.description,''),coalesce(t.director,''),t.year_released,coalesce(t.thumbnail_url,''),t.published,m.id_movie,asset.asset_id,asset.asset_status from titles t left join movies m on m.id_title=t.id_title and m.deleted_at is null left join series s on s.id_title=t.id_title and s.deleted_at is null ` + assetJoin(admin) + ` where t.deleted_at is null and (` + visibility(admin) + `) `
 	result := []homeRow{}
 	userID := r.Header.Get("X-User-Id")
 	if userID != "" {
@@ -250,7 +274,7 @@ type scanner interface{ Scan(...any) error }
 
 func scanTitle(s scanner) (titleItem, error) {
 	var i titleItem
-	err := s.Scan(&i.ID, &i.TitleID, &i.Title, &i.ContentType, &i.Description, &i.Director, &i.Year, &i.Thumbnail, &i.Published, &i.AssetID)
+	err := s.Scan(&i.ID, &i.TitleID, &i.Title, &i.ContentType, &i.Description, &i.Director, &i.Year, &i.Thumbnail, &i.Published, &i.MovieID, &i.AssetID, &i.AssetStatus)
 	return i, err
 }
 func scanTitles(rows pgx.Rows) ([]titleItem, error) {

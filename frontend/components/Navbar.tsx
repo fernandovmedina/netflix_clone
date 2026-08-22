@@ -17,6 +17,7 @@ const navigation = [
 
 export const Navbar = () => {
   const [uuid, setUuid] = useState("");
+  const [mobileOpen, setMobileOpen] = useState(false);
   const { user, logout } = useAuth();
   const router = useRouter();
 
@@ -32,7 +33,7 @@ export const Navbar = () => {
   };
 
   return (
-    <nav className="flex w-full items-center gap-4 px-5 py-4 text-white sm:px-10 lg:px-14">
+    <nav className="relative flex w-full items-center gap-3 px-4 py-3 text-white sm:px-8 lg:px-14 lg:py-4">
       <Link href={withProfile("/home")} className="shrink-0">
         <Image src="/netflix_logo.svg" alt="Netflix" width={105} height={29} priority />
       </Link>
@@ -46,7 +47,7 @@ export const Navbar = () => {
       <div className="ml-auto flex items-center gap-3">
         <Image src="/white_search.png" alt="Search" width={24} height={24} />
         <Image src="/white_notifications.png" alt="Notifications" width={24} height={24} className="hidden sm:block" />
-        <div className="group relative flex items-center gap-1">
+        <div className="group relative hidden items-center gap-1 md:flex">
           <Image src="/gray_profile.png" alt="Profile" width={32} height={32} className="rounded" />
           <Image src="/white_dropdown.png" alt="Open profile menu" width={13} height={13} />
           <div className="absolute right-0 top-full h-3 w-56" />
@@ -62,7 +63,12 @@ export const Navbar = () => {
             <button type="button" onClick={handleLogOut} className="w-full pt-1 text-left text-sm hover:underline">Log out</button>
           </div>
         </div>
+        <button type="button" onClick={() => setMobileOpen((value) => !value)} aria-expanded={mobileOpen} aria-controls="mobile-navigation" className="flex min-h-11 min-w-11 items-center justify-center rounded border border-white/40 bg-black/50 text-2xl md:hidden" aria-label="Toggle navigation menu">{mobileOpen ? "×" : "☰"}</button>
       </div>
+      {mobileOpen && <div id="mobile-navigation" className="absolute inset-x-3 top-full z-50 mt-1 max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-lg border border-zinc-700 bg-black/95 p-4 shadow-2xl md:hidden">
+        <div className="grid gap-1">{navigation.map(([label, path]) => <Link key={path} href={withProfile(path)} onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center rounded px-3 hover:bg-zinc-800">{label}</Link>)}</div>
+        <div className="mt-3 border-t border-zinc-700 pt-3"><p className="px-3 text-sm font-bold">{user?.name || "Profile"}</p><p className="mb-2 truncate px-3 text-xs text-gray-400">{user?.email}</p><Link href="/home/ManageProfiles" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center rounded px-3 hover:bg-zinc-800">Manage profiles</Link><Link href="/loginhelp" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center rounded px-3 hover:bg-zinc-800">Help center</Link><button type="button" onClick={handleLogOut} className="min-h-11 w-full rounded px-3 text-left hover:bg-zinc-800">Log out</button></div>
+      </div>}
     </nav>
   );
 };

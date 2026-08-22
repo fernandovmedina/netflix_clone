@@ -14,7 +14,7 @@ export default function SignUp() {
 
   return (
     <main className="bg-white text-black">
-      <nav className="flex flex-row items-center justify-between py-7 border-b border-gray-600 w-full px-10">
+      <nav className="flex w-full items-center justify-between border-b border-gray-300 px-4 py-5 sm:px-10 sm:py-7">
         <Link href="/">
           <Image
             src="/netflix_logo.svg"
@@ -28,7 +28,7 @@ export default function SignUp() {
         </Link>
       </nav>
       <section className="flex items-center justify-center">
-        <div className="w-[25%] mt-20 text-center pb-24 flex flex-col justify-center">
+        <div className="mt-12 flex w-full max-w-lg flex-col justify-center px-5 pb-20 text-center sm:mt-20">
           <Image
             className="mx-auto"
             src="/verifySign.png"
@@ -68,10 +68,10 @@ export default function SignUp() {
           </a>
         </div>
       </section>
-      <footer className="text-gray-800 py-15 px-40 bg-gray-400/40">
+      <footer className="bg-gray-100 px-5 py-10 text-gray-800 sm:px-10 lg:px-20">
         <a href="tel:8009539947">Questions? Call 800 953 9947 (Toll-Free)</a>
-        <div className="mt-5 flex flex-row w-full mb-10 text-sm">
-          <div className="w-1/4 flex flex-col underline">
+        <div className="mb-10 mt-5 grid w-full grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">
               FAQ
             </a>
@@ -79,7 +79,7 @@ export default function SignUp() {
               Privacy
             </a>
           </div>
-          <div className="w-1/4 flex flex-col underline">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">
               Help Center
             </a>
@@ -87,7 +87,7 @@ export default function SignUp() {
               Cookie Preferences
             </a>
           </div>
-          <div className="w-1/4 flex flex-col underline">
+          <div className="flex flex-col underline">
             <a href="" className="mb-2 hover:text-gray-200">
               Netflix Shop
             </a>
@@ -95,7 +95,7 @@ export default function SignUp() {
               Corporate Information
             </a>
           </div>
-          <div className="w-1/4 underline">
+          <div className="underline">
             <a href="" className="hover:text-gray-200">
               Terms of Use
             </a>
