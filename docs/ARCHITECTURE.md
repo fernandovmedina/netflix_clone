@@ -293,13 +293,27 @@ The Go importer remains the source of the live seeded catalog. Compose runs it
 in content-aware reset mode. If the catalog shape, seed-title inventory, or
 stored source fingerprint differs, this single command removes and rebuilds
 only catalog data, `video_assets`, `video_jobs`, and the exact `/media/hls` and
-`/media/sources` trees, then queues the current `seed/video/video.mp4` for every
-seeded movie and episode. When catalog and video are already current, it uses
+`/media/sources` trees, then queues each movie or series episode from its
+manifest-selected source. The optional `video_source` field accepts `short` or
+`long` and defaults to `short`; a series choice applies to all of its episodes.
+`short` uses `seed/video/video-short.mp4`, while `long` uses the owner's
+untouched `seed/video/video.mp4`. Attack and Death Note currently opt into the
+long source, covering one movie and five episodes. When catalog and every
+selected source fingerprint are already current, the importer uses
 the normal idempotent importer and preserves ready media, so restarting a
 dependent worker cannot accidentally trigger another transcode:
 
 ```sh
 docker compose up --build seed
+```
+
+The committed short clip is deterministically derived from the long source by
+the seed tool (FFmpeg must be on `PATH`). It is re-encoded to begin on a clean
+video keyframe and retains AAC audio:
+
+```sh
+cd database/seed
+go run . -generate-short-video ../../seed/video/video-short.mp4
 ```
 
 Before changing catalog media, the reset atomically renames the existing HLS,
@@ -450,9 +464,17 @@ POST   /api/v1/admin/seasons/:id/episodes
 POST   /api/v1/admin/movies/:id/video      (multipart) -> 202 {asset_id}
 POST   /api/v1/admin/episodes/:id/video    (multipart) -> 202 {asset_id}
 POST   /api/v1/admin/titles/:id/thumbnail  (multipart)
+POST   /api/v1/admin/episodes/:id/thumbnail (multipart) -> 200 {thumbnail_url}
 GET    /api/v1/admin/assets/:id            -> {status, qualities, error, progress}
 POST   /api/v1/admin/titles/:id/publish    {published: bool}
 ```
+
+Episode artwork uploads use multipart field `file` and accept JPEG, PNG, or
+WebP images up to 20 MiB. `PATCH /api/v1/admin/episodes/:id` also accepts an
+optional `thumbnail_url`: omitting it preserves the current image, an empty
+string clears it, and an internal streaming URL repoints it. Seed episode
+objects intentionally carry no artwork fields; only the ten seeded series have
+posters.
 
 Metadata arrays use replacement semantics when present (including an explicit
 empty array). An omitted array is preserved on PATCH. Movie and series creates

@@ -7,29 +7,53 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 type EditorKind = "movies" | "series";
-type AdminTitleEditorProps = { kind: EditorKind; titleId?: number };
+type AdminTitleEditorProps = { kind: EditorKind; titleId?: number; initialDetail?: TitleDetail };
 
 const emptyForm: AdminTitleInput = { title: "", description: "", director: "", year_released: new Date().getFullYear(), duration: 0, number_of_seasons: 1, genre_ids: [], actor_ids: [] };
 
-export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
+function formFromDetail(value: TitleDetail): AdminTitleInput {
+  return {
+    title: value.title ?? "",
+    description: value.description ?? "",
+    director: value.director ?? "",
+    year_released: value.year_released ?? new Date().getFullYear(),
+    duration: typeof value.duration === "number" ? value.duration : 0,
+    number_of_seasons: value.seasons?.length ?? 1,
+    genre_ids: [],
+    actor_ids: [],
+  };
+}
+
+function detailHasReadyAsset(kind: EditorKind, value?: TitleDetail): boolean {
+  if (!value) return false;
+  return kind === "movies"
+    ? value.asset_status === "ready"
+    : value.seasons?.some((season) => season.episodes.some((episode) => episode.asset_status === "ready")) ?? false;
+}
+
+export function AdminTitleEditor({ kind, titleId, initialDetail }: AdminTitleEditorProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [form, setForm] = useState<AdminTitleInput>(emptyForm);
+  const [form, setForm] = useState<AdminTitleInput>(() => initialDetail ? formFromDetail(initialDetail) : emptyForm);
   const [entityId, setEntityId] = useState<number | null>(() => {
     const queryId = Number(searchParams.get("entityId"));
-    return Number.isInteger(queryId) && queryId > 0 ? queryId : titleId ?? null;
+    if (Number.isInteger(queryId) && queryId > 0) return queryId;
+    if (kind === "series" && initialDetail?.series_id) return initialDetail.series_id;
+    if (kind === "movies" && initialDetail?.movie_id) return initialDetail.movie_id;
+    return titleId ?? null;
   });
-  const [resolvedTitleId, setResolvedTitleId] = useState<number | null>(titleId ?? null);
-  const [detail, setDetail] = useState<TitleDetail | null>(null);
-  const [loading, setLoading] = useState(Boolean(titleId));
+  const [resolvedTitleId, setResolvedTitleId] = useState<number | null>(initialDetail?.title_id ?? titleId ?? null);
+  const [detail, setDetail] = useState<TitleDetail | null>(initialDetail ?? null);
+  const [loading, setLoading] = useState(Boolean(titleId && !initialDetail));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState("");
   const [error, setError] = useState("");
-  const [assetReady, setAssetReady] = useState(false);
+  const [assetReady, setAssetReady] = useState(() => detailHasReadyAsset(kind, initialDetail));
   const [genres, setGenres] = useState<MetadataReference[]>([]);
   const [actors, setActors] = useState<MetadataReference[]>([]);
   const [metadataLoading, setMetadataLoading] = useState(true);
   const [metadataError, setMetadataError] = useState("");
+  const [associationDirty, setAssociationDirty] = useState({ genre_ids: false, actor_ids: false });
 
   useEffect(() => {
     let active = true;
@@ -40,11 +64,6 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
         setGenres(genreOptions);
         setActors(actorOptions);
         setMetadataError("");
-        setForm((current) => ({
-          ...current,
-          genre_ids: detail ? genreOptions.filter((option) => detail.genres?.includes(option.name)).map((option) => option.id) : current.genre_ids,
-          actor_ids: detail ? actorOptions.filter((option) => (detail.actors ?? detail.cast)?.includes(option.name)).map((option) => option.id) : current.actor_ids,
-        }));
       })
       .catch((reason: unknown) => {
         if (active) setMetadataError(reason instanceof Error ? reason.message : "Unable to load genres and cast.");
@@ -53,7 +72,17 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
         if (active) setMetadataLoading(false);
       });
     return () => { active = false; };
-  }, [detail]);
+  }, []);
+
+  useEffect(() => {
+    if (!detail || metadataLoading) return;
+    setForm((current) => ({
+      ...current,
+      genre_ids: genres.filter((option) => detail.genres?.includes(option.name)).map((option) => option.id),
+      actor_ids: actors.filter((option) => (detail.actors ?? detail.cast)?.includes(option.name)).map((option) => option.id),
+    }));
+    setAssociationDirty({ genre_ids: false, actor_ids: false });
+  }, [actors, detail, genres, metadataLoading]);
 
   const load = useCallback(async () => {
     if (!titleId) return;
@@ -65,20 +94,8 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
       setResolvedTitleId(value.title_id ?? value.id);
       if (kind === "series" && value.series_id) setEntityId(value.series_id);
       if (kind === "movies" && value.movie_id) setEntityId(value.movie_id);
-      setForm({
-        title: value.title ?? "",
-        description: value.description ?? "",
-        director: value.director ?? "",
-        year_released: value.year_released ?? new Date().getFullYear(),
-        duration: typeof value.duration === "number" ? value.duration : 0,
-        number_of_seasons: value.seasons?.length ?? 1,
-        genre_ids: [],
-        actor_ids: [],
-      });
-      const hasReadyAsset = kind === "movies"
-        ? value.asset_status === "ready"
-        : value.seasons?.some((season) => season.episodes.some((episode) => episode.asset_status === "ready")) ?? false;
-      setAssetReady(hasReadyAsset);
+      setForm(formFromDetail(value));
+      setAssetReady(detailHasReadyAsset(kind, value));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to load this title.");
     } finally {
@@ -86,13 +103,18 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
     }
   }, [kind, titleId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (!initialDetail) load(); }, [initialDetail, load]);
 
   const setField = (field: keyof AdminTitleInput, value: string | number) => setForm((current) => ({ ...current, [field]: value }));
   const toggleMetadata = (field: "genre_ids" | "actor_ids", id: number) => setForm((current) => {
     const selected = current[field] ?? [];
     return { ...current, [field]: selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id] };
   });
+
+  const changeMetadata = (field: "genre_ids" | "actor_ids", id: number) => {
+    setAssociationDirty((current) => ({ ...current, [field]: true }));
+    toggleMetadata(field, id);
+  };
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -108,7 +130,12 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
         const routeId = kind === "movies" ? created.id : created.title_id;
         router.replace(`/admin/${kind}/${routeId}?entityId=${created.id}`);
       } else if (entityId) {
-        await adminApi.updateTitle(kind, entityId, form);
+        const payload: AdminTitleInput = { ...form };
+        if (!associationDirty.genre_ids) delete payload.genre_ids;
+        if (!associationDirty.actor_ids) delete payload.actor_ids;
+        delete payload.category_ids;
+        await adminApi.updateTitle(kind, entityId, payload);
+        await load();
         setSaved("Changes saved.");
       }
     } catch (reason) {
@@ -148,8 +175,8 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
         <label>Director<input value={form.director} onChange={(event) => setField("director", event.target.value)} className="mt-2 w-full rounded border border-zinc-600 bg-black px-4 py-3" /></label>
         {kind === "movies" ? <label>Duration (minutes)<input type="number" min={0} value={form.duration} onChange={(event) => setField("duration", Number(event.target.value))} className="mt-2 w-full rounded border border-zinc-600 bg-black px-4 py-3" /></label> : <label>Initial number of seasons<input type="number" min={0} max={100} value={form.number_of_seasons} onChange={(event) => setField("number_of_seasons", Number(event.target.value))} className="mt-2 w-full rounded border border-zinc-600 bg-black px-4 py-3" /></label>}
         <label className="sm:col-span-2">Description<textarea rows={5} value={form.description} onChange={(event) => setField("description", event.target.value)} className="mt-2 w-full rounded border border-zinc-600 bg-black px-4 py-3" /></label>
-        <MetadataChoices legend="Genres" options={genres} selected={form.genre_ids ?? []} loading={metadataLoading} onToggle={(id) => toggleMetadata("genre_ids", id)} />
-        <MetadataChoices legend="Cast" options={actors} selected={form.actor_ids ?? []} loading={metadataLoading} onToggle={(id) => toggleMetadata("actor_ids", id)} />
+        <MetadataChoices legend="Genres" options={genres} selected={form.genre_ids ?? []} loading={metadataLoading} onToggle={(id) => changeMetadata("genre_ids", id)} />
+        <MetadataChoices legend="Cast" options={actors} selected={form.actor_ids ?? []} loading={metadataLoading} onToggle={(id) => changeMetadata("actor_ids", id)} />
         {metadataError && <p role="alert" className="rounded bg-red-950/60 p-4 text-red-200 sm:col-span-2">{metadataError}</p>}
         <button disabled={saving || metadataLoading || Boolean(metadataError)} className="min-h-12 rounded bg-red-600 px-6 font-bold hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2">{saving ? "Saving…" : metadataLoading ? "Loading metadata…" : resolvedTitleId ? "Save changes" : "Create metadata"}</button>
       </form>

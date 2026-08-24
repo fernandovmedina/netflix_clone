@@ -2,6 +2,7 @@
   "movies": [
     {
       "name": "Attack",
+      "video_source": "long",
       "year_released": 2022,
       "description": "After a coordinated assault isolates a coastal city, a former rescue pilot leads a small team through enemy lines to restore its communications network.",
       "genres": ["Action", "Thriller", "Drama"],

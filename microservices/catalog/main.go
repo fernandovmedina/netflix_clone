@@ -83,6 +83,7 @@ func (app *application) routes(mux *http.ServeMux) {
 	adminMux.HandleFunc("POST /api/v1/admin/movies/{id}/video", app.uploadMovieVideo)
 	adminMux.HandleFunc("POST /api/v1/admin/episodes/{id}/video", app.uploadEpisodeVideo)
 	adminMux.HandleFunc("POST /api/v1/admin/titles/{id}/thumbnail", app.uploadThumbnail)
+	adminMux.HandleFunc("POST /api/v1/admin/episodes/{id}/thumbnail", app.uploadEpisodeThumbnail)
 	adminMux.HandleFunc("POST /api/v1/admin/titles/{id}/publish", app.publishTitle)
 	adminMux.HandleFunc("GET /api/v1/admin/assets/{id}", app.assetStatus)
 	mux.Handle("/api/v1/admin/", app.admin(adminMux))

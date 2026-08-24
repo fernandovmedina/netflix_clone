@@ -673,7 +673,7 @@ func TestAdminAuthorizationEveryRoute(t *testing.T) {
 		{"POST", "/api/v1/admin/series/1/seasons"}, {"POST", "/api/v1/admin/seasons/1/episodes"}, {"PATCH", "/api/v1/admin/seasons/1"}, {"DELETE", "/api/v1/admin/seasons/1"},
 		{"PATCH", "/api/v1/admin/episodes/1"}, {"DELETE", "/api/v1/admin/episodes/1"}, {"POST", "/api/v1/admin/genres"}, {"PATCH", "/api/v1/admin/genres/1"}, {"DELETE", "/api/v1/admin/genres/1"},
 		{"POST", "/api/v1/admin/actors"}, {"PATCH", "/api/v1/admin/actors/1"}, {"DELETE", "/api/v1/admin/actors/1"}, {"POST", "/api/v1/admin/categories"}, {"PATCH", "/api/v1/admin/categories/1"}, {"DELETE", "/api/v1/admin/categories/1"},
-		{"POST", "/api/v1/admin/movies/1/video"}, {"POST", "/api/v1/admin/episodes/1/video"}, {"POST", "/api/v1/admin/titles/1/thumbnail"}, {"POST", "/api/v1/admin/titles/1/publish"}, {"GET", "/api/v1/admin/assets/" + uuid.NewString()},
+		{"POST", "/api/v1/admin/movies/1/video"}, {"POST", "/api/v1/admin/episodes/1/video"}, {"POST", "/api/v1/admin/titles/1/thumbnail"}, {"POST", "/api/v1/admin/episodes/1/thumbnail"}, {"POST", "/api/v1/admin/titles/1/publish"}, {"GET", "/api/v1/admin/assets/" + uuid.NewString()},
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
@@ -681,6 +681,96 @@ func TestAdminAuthorizationEveryRoute(t *testing.T) {
 			requireStatus(t, route.method, route.path, normal.API.do(route.method, route.path, nil, nil), http.StatusForbidden)
 		})
 	}
+}
+
+func TestEpisodeArtworkUploadPatchAndStreaming(t *testing.T) {
+	s := newSuite(t)
+	admin := s.admin(t)
+	var titleID, episodeID, episodeNumber, duration int
+	var title, description string
+	var previousThumbnail *string
+	err := s.db.QueryRow(context.Background(), `select t.id_title,e.id_episode,e.episode_number,e.title,coalesce(e.description,''),coalesce(e.duration,0),e.thumbnail_url
+		from titles t join series sr on sr.id_title=t.id_title join seasons se on se.id_series=sr.id_series join episodes e on e.id_season=se.id_season join video_assets va on va.id_episode=e.id_episode and va.status='ready'
+		where t.published and t.deleted_at is null and sr.deleted_at is null and se.deleted_at is null and e.deleted_at is null order by t.id_title,se.season_number,e.episode_number limit 1`).Scan(&titleID, &episodeID, &episodeNumber, &title, &description, &duration, &previousThumbnail)
+	if err != nil {
+		t.Fatalf("find seeded episode: %v", err)
+	}
+	imageBytes := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0x5a}, 600)...)
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("file", "episode-still.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = part.Write(imageBytes); err != nil {
+		t.Fatal(err)
+	}
+	if err = mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	uploadPath := "/api/v1/admin/episodes/" + strconv.Itoa(episodeID) + "/thumbnail"
+	upload := admin.do(http.MethodPost, uploadPath, body.Bytes(), map[string]string{"Content-Type": mw.FormDataContentType()})
+	requireStatus(t, http.MethodPost, uploadPath, upload, http.StatusOK)
+	uploaded := decodeBody[struct {
+		Thumbnail string `json:"thumbnail_url"`
+	}](t, upload)
+	if !strings.HasPrefix(uploaded.Thumbnail, "/api/v1/stream/thumbnails/episode-") {
+		t.Fatalf("unexpected thumbnail URL %q", uploaded.Thumbnail)
+	}
+	t.Cleanup(func() {
+		_, _ = s.db.Exec(context.Background(), `update episodes set thumbnail_url=$2 where id_episode=$1`, episodeID, previousThumbnail)
+		cleanup := exec.Command("docker", "compose", "exec", "-T", "worker", "rm", "-f", "/media/thumbnails/"+filepath.Base(uploaded.Thumbnail))
+		cleanup.Dir = filepath.Join("..", "..")
+		_ = cleanup.Run()
+	})
+
+	assertDetailThumbnail := func(want string) {
+		detailPath := "/api/v1/series/" + strconv.Itoa(titleID)
+		detailResponse := admin.do(http.MethodGet, detailPath, nil, nil)
+		requireStatus(t, http.MethodGet, detailPath, detailResponse, http.StatusOK)
+		detail := decodeBody[struct {
+			Seasons []struct {
+				Episodes []struct {
+					ID        int    `json:"id"`
+					Thumbnail string `json:"thumbnail_url"`
+				} `json:"episodes"`
+			} `json:"seasons"`
+		}](t, detailResponse)
+		for _, season := range detail.Seasons {
+			for _, episode := range season.Episodes {
+				if episode.ID == episodeID {
+					if episode.Thumbnail != want {
+						t.Fatalf("series detail thumbnail=%q want %q", episode.Thumbnail, want)
+					}
+					return
+				}
+			}
+		}
+		t.Fatalf("episode %d absent from series detail", episodeID)
+	}
+	assertDetailThumbnail(uploaded.Thumbnail)
+	served := admin.do(http.MethodGet, uploaded.Thumbnail, nil, nil)
+	requireStatus(t, http.MethodGet, uploaded.Thumbnail, served, http.StatusOK)
+	if served.Header.Get("Content-Type") != "image/jpeg" || !bytes.Equal(served.Body, imageBytes) {
+		t.Fatalf("streamed artwork content-type=%q bytes=%d want image/jpeg bytes=%d", served.Header.Get("Content-Type"), len(served.Body), len(imageBytes))
+	}
+
+	patchPath := "/api/v1/admin/episodes/" + strconv.Itoa(episodeID)
+	patch := func(thumbnail *string) {
+		body := map[string]any{"episode_number": episodeNumber, "title": title, "description": description, "duration": duration}
+		if thumbnail != nil {
+			body["thumbnail_url"] = *thumbnail
+		}
+		response := admin.do(http.MethodPatch, patchPath, body, nil)
+		requireStatus(t, http.MethodPatch, patchPath, response, http.StatusNoContent)
+	}
+	patch(nil)
+	assertDetailThumbnail(uploaded.Thumbnail)
+	empty := ""
+	patch(&empty)
+	assertDetailThumbnail("")
+	patch(&uploaded.Thumbnail)
+	assertDetailThumbnail(uploaded.Thumbnail)
 }
 
 type plan struct {
@@ -865,7 +955,7 @@ func TestStreaming(t *testing.T) {
 	s := newSuite(t)
 	u := s.arrangedUser(t, "stream")
 	var asset string
-	err := s.db.QueryRow(context.Background(), `select va.id::text from video_assets va join movies m on m.id_movie=va.id_movie join titles t on t.id_title=m.id_title where va.status='ready' and t.published and va.qualities<> '[]' order by va.created_at limit 1`).Scan(&asset)
+	err := s.db.QueryRow(context.Background(), `select va.id::text from video_assets va join movies m on m.id_movie=va.id_movie join titles t on t.id_title=m.id_title where va.status='ready' and va.duration_seconds>100 and t.published and va.qualities<> '[]' order by va.created_at limit 1`).Scan(&asset)
 	if err != nil {
 		t.Fatalf("find playable seed asset: %v", err)
 	}
@@ -881,10 +971,11 @@ func TestStreaming(t *testing.T) {
 	playlist := u.API.do("GET", playlistPath, nil, nil)
 	requireStatus(t, "GET", playlistPath, playlist, 200)
 	reSegment := regexp.MustCompile(`(?m)^(seg_\d{5}\.ts)\r?$`)
-	seg := reSegment.FindSubmatch(playlist.Body)
-	if len(seg) != 2 {
-		t.Fatalf("playlist has no segment: %s", playlist.Body)
+	segments := reSegment.FindAllSubmatch(playlist.Body, -1)
+	if len(segments) < 3 {
+		t.Fatalf("playlist has %d segments, need a mid-playlist segment: %s", len(segments), playlist.Body)
 	}
+	seg := segments[len(segments)/2]
 	segmentPath := strings.TrimSuffix(playlistPath, "playlist.m3u8") + string(seg[1])
 	full := u.API.do("GET", segmentPath, nil, nil)
 	requireStatus(t, "GET", segmentPath, full, 200)
@@ -897,6 +988,7 @@ func TestStreaming(t *testing.T) {
 	if partial.Header.Get("Content-Range") != wantRange || len(partial.Body) != 10 {
 		t.Fatalf("range Content-Range=%q bytes=%d want %q/10", partial.Header.Get("Content-Range"), len(partial.Body), wantRange)
 	}
+	t.Logf("mid-playlist segment %s (%d of %d): status=206 Content-Range=%s bytes=%d", seg[1], len(segments)/2+1, len(segments), partial.Header.Get("Content-Range"), len(partial.Body))
 	hidden := s.movieFixture(t, false, "ready")
 	for _, path := range []string{"/api/v1/stream/" + hidden.AssetID + "/master.m3u8", "/api/v1/stream/" + hidden.AssetID + "/144p/playlist.m3u8", "/api/v1/stream/" + hidden.AssetID + "/144p/seg_00000.ts"} {
 		requireStatus(t, "GET", path, u.API.do("GET", path, nil, nil), 404)
@@ -986,7 +1078,7 @@ func TestUploadTranscodeReady(t *testing.T) {
 	t.Cleanup(func() { s.cleanupTitle(created.TitleID) })
 	publishPath := "/api/v1/admin/titles/" + strconv.Itoa(created.TitleID) + "/publish"
 	requireStatus(t, "POST", publishPath, admin.do("POST", publishPath, map[string]bool{"published": true}, nil), http.StatusOK)
-	video := filepath.Join("..", "..", "seed", "video", "video.mp4")
+	video := filepath.Join("..", "..", "seed", "video", "video-short.mp4")
 	if _, err := os.Stat(video); err != nil {
 		t.Fatalf("seed video: %v", err)
 	}

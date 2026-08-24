@@ -179,7 +179,7 @@ All routes are reached through `localhost:8080` and require the session cookie u
 |---|---|
 | auth | `POST /api/v1/auth/{signup,login,logout,refresh}` (public) · `GET /api/v1/auth/me` · `GET /api/v1/auth/google[/callback]` (public) |
 | catalog | `GET /api/v1/{titles,titles/{id},movies/{id},series/{id},genres,categories,actors,home}` |
-| catalog admin | `POST/PATCH/DELETE /api/v1/admin/{movies,series,seasons,episodes,genres}` · `POST /api/v1/admin/{movies,episodes}/{id}/video` · `POST /api/v1/admin/titles/{id}/{thumbnail,publish}` · `GET /api/v1/admin/assets/{id}` |
+| catalog admin | `POST/PATCH/DELETE /api/v1/admin/{movies,series,seasons,episodes,genres}` · `POST /api/v1/admin/{movies,episodes}/{id}/video` · `POST /api/v1/admin/titles/{id}/{thumbnail,publish}` · `POST /api/v1/admin/episodes/{id}/thumbnail` · `GET /api/v1/admin/assets/{id}` |
 | streaming | `GET /api/v1/stream/{path...}` — `master.m3u8`, `<quality>/playlist.m3u8`, segments, artwork |
 | user | `GET/PUT /api/v1/progress/{kind}/{id}` · `GET /api/v1/progress/continue` · `GET/POST/DELETE /api/v1/favorites` · `GET/POST/GET/PATCH/DELETE /api/v1/profiles[/{id}]` |
 | payments | `GET /api/v1/plans` · `POST /api/v1/discounts/validate` · `POST /api/v1/payments/{card,oxxo}` · `POST /api/v1/payments/oxxo/{ref}/simulate-payment` · `GET /api/v1/payments/{id}` |

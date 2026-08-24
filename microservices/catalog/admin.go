@@ -430,10 +430,11 @@ func (app *application) deleteSeason(w http.ResponseWriter, r *http.Request) {
 }
 
 type episodeInput struct {
-	EpisodeNumber int    `json:"episode_number"`
-	Title         string `json:"title"`
-	Description   string `json:"description"`
-	Duration      int    `json:"duration"`
+	EpisodeNumber int     `json:"episode_number"`
+	Title         string  `json:"title"`
+	Description   string  `json:"description"`
+	Duration      int     `json:"duration"`
+	Thumbnail     *string `json:"thumbnail_url"`
 }
 
 func (app *application) createEpisode(w http.ResponseWriter, r *http.Request) {
@@ -450,7 +451,7 @@ func (app *application) createEpisode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var episodeID int
-	err := app.pool.QueryRow(r.Context(), `insert into episodes(id_season,episode_number,title,description,duration) values($1,$2,$3,$4,$5) on conflict(id_season,episode_number) do update set title=excluded.title,description=excluded.description,duration=excluded.duration,deleted_at=null,updated_at=now() returning id_episode`, id, in.EpisodeNumber, strings.TrimSpace(in.Title), in.Description, nullInt(in.Duration)).Scan(&episodeID)
+	err := app.pool.QueryRow(r.Context(), `insert into episodes(id_season,episode_number,title,description,duration,thumbnail_url) values($1,$2,$3,$4,$5,$6) on conflict(id_season,episode_number) do update set title=excluded.title,description=excluded.description,duration=excluded.duration,thumbnail_url=case when $7 then excluded.thumbnail_url else episodes.thumbnail_url end,deleted_at=null,updated_at=now() returning id_episode`, id, in.EpisodeNumber, strings.TrimSpace(in.Title), in.Description, nullInt(in.Duration), episodeThumbnail(in.Thumbnail), in.Thumbnail != nil).Scan(&episodeID)
 	if err != nil {
 		serverError(w, err)
 		return
@@ -472,7 +473,7 @@ func (app *application) patchEpisode(w http.ResponseWriter, r *http.Request) {
 		jsonx.Error(w, 400, "episode_number and title are required")
 		return
 	}
-	tag, err := app.pool.Exec(r.Context(), `update episodes set episode_number=$2,title=$3,description=$4,duration=$5,updated_at=now() where id_episode=$1 and deleted_at is null`, id, in.EpisodeNumber, strings.TrimSpace(in.Title), in.Description, nullInt(in.Duration))
+	tag, err := app.pool.Exec(r.Context(), `update episodes set episode_number=$2,title=$3,description=$4,duration=$5,thumbnail_url=case when $6 then $7 else thumbnail_url end,updated_at=now() where id_episode=$1 and deleted_at is null`, id, in.EpisodeNumber, strings.TrimSpace(in.Title), in.Description, nullInt(in.Duration), in.Thumbnail != nil, episodeThumbnail(in.Thumbnail))
 	if err != nil {
 		serverError(w, err)
 		return
@@ -482,6 +483,17 @@ func (app *application) patchEpisode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+func episodeThumbnail(value *string) any {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return trimmed
 }
 
 func (app *application) deleteEpisode(w http.ResponseWriter, r *http.Request) {
@@ -792,8 +804,25 @@ func validVideo(ext string, m sniffed) bool {
 }
 
 func (app *application) uploadThumbnail(w http.ResponseWriter, r *http.Request) {
+	app.uploadArtwork(w, r, "titles", "id_title", "title")
+}
+
+func (app *application) uploadEpisodeThumbnail(w http.ResponseWriter, r *http.Request) {
+	app.uploadArtwork(w, r, "episodes", "id_episode", "episode")
+}
+
+func (app *application) uploadArtwork(w http.ResponseWriter, r *http.Request, table, idColumn, prefix string) {
 	id, ok := pathInt(w, r, "id")
 	if !ok {
+		return
+	}
+	var exists bool
+	if err := app.pool.QueryRow(r.Context(), fmt.Sprintf(`select exists(select 1 from %s where %s=$1 and deleted_at is null)`, table, idColumn), id).Scan(&exists); err != nil {
+		serverError(w, err)
+		return
+	}
+	if !exists {
+		jsonx.Error(w, 404, prefix+" not found")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
@@ -809,21 +838,24 @@ func (app *application) uploadThumbnail(w http.ResponseWriter, r *http.Request) 
 		jsonx.Error(w, 415, "file content is not an allowed image")
 		return
 	}
-	key := filepath.ToSlash(filepath.Join("thumbnails", fmt.Sprintf("title-%d-%s%s", id, uuid.NewString(), ext)))
+	key := filepath.ToSlash(filepath.Join("thumbnails", fmt.Sprintf("%s-%d-%s%s", prefix, id, uuid.NewString(), ext)))
 	if err = app.store.Put(key, io.MultiReader(bytes.NewReader(mime.head), part)); err != nil {
 		writeUploadError(w, err)
 		return
 	}
-	tag, err := app.pool.Exec(r.Context(), `update titles set thumbnail_url=$2,updated_at=now() where id_title=$1 and deleted_at is null`, id, "/api/v1/stream/"+key)
+	thumbnailURL := "/api/v1/stream/" + key
+	tag, err := app.pool.Exec(r.Context(), fmt.Sprintf(`update %s set thumbnail_url=$2,updated_at=now() where %s=$1 and deleted_at is null`, table, idColumn), id, thumbnailURL)
 	if err != nil {
+		_ = app.store.Remove(key)
 		serverError(w, err)
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		jsonx.Error(w, 404, "title not found")
+		_ = app.store.Remove(key)
+		jsonx.Error(w, 404, prefix+" not found")
 		return
 	}
-	jsonx.Write(w, 200, map[string]string{"thumbnail_url": "/api/v1/stream/" + key})
+	jsonx.Write(w, 200, map[string]string{"thumbnail_url": thumbnailURL})
 }
 func (app *application) publishTitle(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(w, r, "id")

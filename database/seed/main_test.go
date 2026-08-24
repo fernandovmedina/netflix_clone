@@ -37,6 +37,56 @@ func TestGenerateSeedSQLIsStandaloneAndExcludesMedia(t *testing.T) {
 	}
 }
 
+func TestSeedVideoPathDefaultsShortAndValidatesSelection(t *testing.T) {
+	root := t.TempDir()
+	short := filepath.Join(root, "video", "video-short.mp4")
+	long := filepath.Join(root, "video", "video.mp4")
+	for selection, want := range map[string]string{"": short, "short": short, " SHORT ": short, "long": long, "LONG": long} {
+		got, err := seedVideoPath(root, selection)
+		if err != nil || got != want {
+			t.Errorf("seedVideoPath(%q) = %q, %v; want %q", selection, got, err, want)
+		}
+	}
+	if _, err := seedVideoPath(root, "trailer"); err == nil {
+		t.Fatal("invalid video_source was accepted")
+	}
+}
+
+func TestSeedManifestSourceInventory(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", "..", "seed"))
+	movies, seriesData, err := manifests(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{"long": 0, "short": 0}
+	for _, item := range movies.Movies {
+		selection := strings.ToLower(strings.TrimSpace(item.VideoSource))
+		if selection == "" {
+			selection = "short"
+		}
+		if _, err = seedVideoPath(root, selection); err != nil {
+			t.Fatalf("movie %q: %v", item.Name, err)
+		}
+		counts[selection]++
+	}
+	for _, item := range seriesData.Series {
+		selection := strings.ToLower(strings.TrimSpace(item.VideoSource))
+		if selection == "" {
+			selection = "short"
+		}
+		if _, err = seedVideoPath(root, selection); err != nil {
+			t.Fatalf("series %q: %v", item.Name, err)
+		}
+		for _, season := range item.Seasons {
+			counts[selection] += len(season.Episodes)
+		}
+	}
+	if counts["long"] != 6 || counts["short"] != 72 {
+		t.Fatalf("source inventory=%v, want long=6 short=72", counts)
+	}
+	t.Logf("source inventory: long=%d short=%d", counts["long"], counts["short"])
+}
+
 func TestResetFailureRestoresDatabaseAndMedia(t *testing.T) {
 	dsn := os.Getenv("PHASE6_RESET_TEST_DATABASE_URL")
 	if dsn == "" {

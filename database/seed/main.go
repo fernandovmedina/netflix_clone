@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -31,6 +32,7 @@ type baseTitle struct {
 	Cast        []string `json:"cast"`
 	Director    string   `json:"director"`
 	Thumbnail   string   `json:"thumbnail_url"`
+	VideoSource string   `json:"video_source"`
 }
 type movie struct {
 	baseTitle
@@ -55,6 +57,7 @@ type episode struct {
 
 func main() {
 	generateSQL := flag.String("generate-sql", "", "write standalone catalog seed SQL and exit")
+	generateShortVideo := flag.String("generate-short-video", "", "generate the short seed clip at the given path and exit")
 	resetCatalog := flag.Bool("reset-catalog", false, "replace catalog data and catalog media before importing")
 	flag.Parse()
 	seedRoot := os.Getenv("SEED_ROOT")
@@ -70,6 +73,13 @@ func main() {
 			log.Fatal(err)
 		}
 		log.Printf("generated %s", *generateSQL)
+		return
+	}
+	if *generateShortVideo != "" {
+		if err := generateShortSeedVideo(seedRoot, *generateShortVideo); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("generated %s", *generateShortVideo)
 		return
 	}
 	ctx := context.Background()
@@ -289,6 +299,7 @@ func copyTree(source, destination string) error {
 
 type dbPool interface {
 	Begin(context.Context) (pgx.Tx, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
@@ -324,22 +335,72 @@ func catalogIsCurrent(ctx context.Context, pool dbPool, root, mediaRoot string) 
 	if titles != len(movieNames)+len(seriesNames) || matchingMovies != len(movieNames) || matchingSeries != len(seriesNames) || movieCount != len(movieNames) || seriesCount != len(seriesNames) || seasonCount != expectedSeasons || episodeCount != expectedEpisodes || assetCount != expectedAssets || jobCount != expectedAssets {
 		return false, nil
 	}
-	var sourcePath string
-	if err = pool.QueryRow(ctx, `select source_path from video_assets where status<>'superseded' and source_path is not null order by id limit 1`).Scan(&sourcePath); err != nil {
-		if err == pgx.ErrNoRows {
-			return false, nil
+	expectedSources := make(map[string]string, expectedAssets)
+	for _, item := range movies.Movies {
+		source, sourceErr := seedVideoPath(root, item.VideoSource)
+		if sourceErr != nil {
+			return false, sourceErr
 		}
-		return false, err
+		expectedSources[assetIdentity("movie", item.Name, 0, 0)] = source
 	}
-	seedHash, err := fileSHA256(filepath.Join(root, "video", "video.mp4"))
+	for _, item := range seriesData.Series {
+		source, sourceErr := seedVideoPath(root, item.VideoSource)
+		if sourceErr != nil {
+			return false, sourceErr
+		}
+		for _, itemSeason := range item.Seasons {
+			for _, itemEpisode := range itemSeason.Episodes {
+				expectedSources[assetIdentity("episode", item.Name, itemSeason.Number, itemEpisode.Number)] = source
+			}
+		}
+	}
+	rows, err := pool.Query(ctx, `select va.kind,coalesce(movie_title.title,series_title.title),coalesce(se.season_number,0),coalesce(e.episode_number,0),coalesce(va.source_path,'')
+		from video_assets va
+		left join movies m on m.id_movie=va.id_movie left join titles movie_title on movie_title.id_title=m.id_title
+		left join episodes e on e.id_episode=va.id_episode left join seasons se on se.id_season=e.id_season left join series sr on sr.id_series=se.id_series left join titles series_title on series_title.id_title=sr.id_title
+		where va.status<>'superseded'`)
 	if err != nil {
 		return false, err
 	}
-	storedHash, err := fileSHA256(filepath.Join(mediaRoot, filepath.FromSlash(sourcePath)))
-	if os.IsNotExist(err) {
-		return false, nil
+	defer rows.Close()
+	expectedHashes := make(map[string][sha256.Size]byte, 2)
+	seen := make(map[string]bool, len(expectedSources))
+	for rows.Next() {
+		var kind, title, sourcePath string
+		var seasonNumber, episodeNumber int
+		if err = rows.Scan(&kind, &title, &seasonNumber, &episodeNumber, &sourcePath); err != nil {
+			return false, err
+		}
+		identity := assetIdentity(kind, title, seasonNumber, episodeNumber)
+		expectedPath, ok := expectedSources[identity]
+		if !ok || seen[identity] || sourcePath == "" {
+			return false, nil
+		}
+		seen[identity] = true
+		expectedHash, ok := expectedHashes[expectedPath]
+		if !ok {
+			expectedHash, err = fileSHA256(expectedPath)
+			if err != nil {
+				return false, err
+			}
+			expectedHashes[expectedPath] = expectedHash
+		}
+		storedHash, hashErr := fileSHA256(filepath.Join(mediaRoot, filepath.FromSlash(sourcePath)))
+		if os.IsNotExist(hashErr) || hashErr == nil && storedHash != expectedHash {
+			return false, nil
+		}
+		if hashErr != nil {
+			return false, hashErr
+		}
 	}
-	return err == nil && seedHash == storedHash, err
+	if err = rows.Err(); err != nil {
+		return false, err
+	}
+	return len(seen) == len(expectedSources), nil
+}
+
+func assetIdentity(kind, title string, seasonNumber, episodeNumber int) string {
+	return fmt.Sprintf("%s|%s|%d|%d", kind, strings.ToLower(strings.TrimSpace(title)), seasonNumber, episodeNumber)
 }
 
 func fileSHA256(path string) ([sha256.Size]byte, error) {
@@ -429,6 +490,44 @@ func generateSeedSQL(root, destination string) error {
 	}
 	b.WriteString("COMMIT;\n")
 	return os.WriteFile(destination, []byte(b.String()), 0o644)
+}
+
+func generateShortSeedVideo(root, destination string) error {
+	source := filepath.Join(root, "video", "video.mp4")
+	destination, err := filepath.Abs(destination)
+	if err != nil {
+		return err
+	}
+	if err = os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".video-short-*.mp4")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	if err = temporary.Close(); err != nil {
+		_ = os.Remove(temporaryPath)
+		return err
+	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	args := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", source, "-t", "6", "-map", "0:v:0", "-map", "0:a:0", "-map_metadata", "-1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-profile:v", "main", "-preset", "veryfast", "-crf", "23", "-g", "50", "-keyint_min", "50", "-sc_threshold", "0", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-f", "mp4", temporaryPath}
+	if output, commandErr := exec.Command("ffmpeg", args...).CombinedOutput(); commandErr != nil {
+		return fmt.Errorf("ffmpeg: %w: %s", commandErr, strings.TrimSpace(string(output)))
+	}
+	if err = os.Chmod(temporaryPath, 0o644); err != nil {
+		return err
+	}
+	if err = os.Rename(temporaryPath, destination); err != nil {
+		return err
+	}
+	succeeded = true
+	return nil
 }
 
 func writeSQLTitle(b *strings.Builder, item baseTitle, kind string) {
@@ -543,7 +642,7 @@ func importMovie(ctx context.Context, tx pgx.Tx, store storage.Store, root strin
 	if err != nil {
 		return err
 	}
-	return ensureAsset(ctx, tx, store, root, "movie", movieID)
+	return ensureAsset(ctx, tx, store, root, "movie", movieID, item.VideoSource)
 }
 
 func importSeries(ctx context.Context, tx pgx.Tx, store storage.Store, root string, item series) error {
@@ -568,7 +667,7 @@ func importSeries(ctx context.Context, tx pgx.Tx, store storage.Store, root stri
 			if err != nil {
 				return err
 			}
-			if err := ensureAsset(ctx, tx, store, root, "episode", episodeID); err != nil {
+			if err := ensureAsset(ctx, tx, store, root, "episode", episodeID, item.VideoSource); err != nil {
 				return err
 			}
 		}
@@ -576,7 +675,7 @@ func importSeries(ctx context.Context, tx pgx.Tx, store storage.Store, root stri
 	return nil
 }
 
-func ensureAsset(ctx context.Context, tx pgx.Tx, store storage.Store, root, kind string, targetID int) error {
+func ensureAsset(ctx context.Context, tx pgx.Tx, store storage.Store, root, kind string, targetID int, videoSource string) error {
 	column := "id_movie"
 	if kind == "episode" {
 		column = "id_episode"
@@ -599,7 +698,11 @@ func ensureAsset(ctx context.Context, tx pgx.Tx, store storage.Store, root, kind
 		return nil
 	}
 	sourceKey := filepath.ToSlash(filepath.Join("sources", assetID, "source.mp4"))
-	f, err := os.Open(filepath.Join(root, "video", "video.mp4"))
+	videoPath, err := seedVideoPath(root, videoSource)
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(videoPath)
 	if err != nil {
 		return err
 	}
@@ -615,6 +718,17 @@ func ensureAsset(ctx context.Context, tx pgx.Tx, store storage.Store, root, kind
 	}
 	_, err = tx.Exec(ctx, `insert into video_jobs(asset_id,status) select $1,'queued' where not exists(select 1 from video_jobs where asset_id=$1)`, assetID)
 	return err
+}
+
+func seedVideoPath(root, selection string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(selection)) {
+	case "", "short":
+		return filepath.Join(root, "video", "video-short.mp4"), nil
+	case "long":
+		return filepath.Join(root, "video", "video.mp4"), nil
+	default:
+		return "", fmt.Errorf("invalid video_source %q (want short or long)", selection)
+	}
 }
 
 func slug(value string) string {

@@ -81,7 +81,8 @@ func bootstrapAdmin(ctx context.Context, conn *pgx.Conn) error {
 	_, err = conn.Exec(ctx, `
 		insert into users(email,password_hash,name,role,email_verified)
 		values($1,$2,'Administrator','admin',true)
-		on conflict(email) do update set role='admin', password_hash=coalesce(users.password_hash,excluded.password_hash), updated_at=now()`, email, hash)
+		on conflict(email) do update set role='admin', password_hash=coalesce(users.password_hash,excluded.password_hash), updated_at=now()
+		where users.role is distinct from 'admin'::user_role or users.password_hash is null`, email, hash)
 	return err
 }
 

@@ -32,6 +32,7 @@ Each series includes title metadata and a nested list of seasons and episodes:
 ```json
 {
   "name": "Baki",
+  "video_source": "short",
   "year_released": 2018,
   "description": "A short summary of the series.",
   "genres": ["Action", "Martial Arts", "Anime"],
@@ -60,6 +61,7 @@ Each series includes title metadata and a nested list of seasons and episodes:
 | Field | Type | Description |
 | --- | --- | --- |
 | `name` | string | Unique display title. |
+| `video_source` | string | Optional `short` (default) or `long`; applies to every episode in the series. |
 | `year_released` | integer | Four-digit release year. |
 | `description` | string | English catalog summary. |
 | `genres` | string[] | Genres used to classify the title. |

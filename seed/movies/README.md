@@ -28,6 +28,7 @@ Each item in `seed.json` follows this structure:
 ```json
 {
   "name": "Attack",
+  "video_source": "long",
   "year_released": 2022,
   "description": "A short summary of the movie.",
   "genres": ["Action", "Thriller", "Drama"],
@@ -41,6 +42,7 @@ Each item in `seed.json` follows this structure:
 | Field | Type | Description |
 | --- | --- | --- |
 | `name` | string | Unique display title. |
+| `video_source` | string | Optional `short` (default) or `long` seed clip selection. |
 | `year_released` | integer | Four-digit release year. |
 | `description` | string | English catalog summary. |
 | `genres` | string[] | Genres used to classify the title. |

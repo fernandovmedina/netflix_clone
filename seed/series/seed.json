@@ -129,6 +129,7 @@
     },
     {
       "name": "Death Note",
+      "video_source": "long",
       "year_released": 2006,
       "description": "A brilliant student finds a supernatural notebook and begins a deadly contest of logic with an equally gifted detective.",
       "genres": ["Mystery", "Psychological Thriller", "Anime"],
