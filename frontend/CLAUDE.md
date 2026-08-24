@@ -1,6 +1,8 @@
 # Netflix Clone — Frontend
 
-Next.js 16 (App Router) frontend for the Netflix clone. This is the single entry point for the app; its middleware will also host the load-balancer logic that proxies to the Go microservices. For full-system context see `../CLAUDE.md`.
+Next.js 16 (App Router) frontend. It talks to the Go backend through the nginx load balancer at `http://localhost:8080` — it does **not** talk to any database, and it is not a load balancer itself. For full-system context see `../CLAUDE.md`.
+
+**Supabase is gone.** There is no `utils/supabase/`, no `@supabase/*` dependency, and no `NEXT_PUBLIC_SUPABASE_*` variable. Authentication is this project's own cookie-based session against the auth service.
 
 **Author:** Fernando Vazquez / [@fernandovmedina](https://github.com/fernandovmedina)
 
@@ -10,105 +12,92 @@ Next.js 16 (App Router) frontend for the Netflix clone. This is the single entry
 
 - **Framework:** Next.js 16 (App Router), React 19.2
 - **Language:** TypeScript (strict), `@/*` path alias → project root
-- **Styling:** Tailwind CSS v4 (via `@tailwindcss/postcss`), global styles in `app/globals.css`
+- **Styling:** Tailwind CSS v4 (`@tailwindcss/postcss`), global styles in `app/globals.css`
 - **UI libs:** MUI v9 (`@mui/material` + Emotion), `@deemlol/next-icons`
-- **Auth:** `@supabase/ssr` + `@supabase/supabase-js`
+- **Video:** `hls.js`
 - **Font:** Roboto via `next/font/google`
 - **Package manager:** pnpm
-
----
 
 ## Commands
 
 ```bash
-pnpm install       # install dependencies
-pnpm dev           # dev server on http://localhost:3000
-pnpm build         # production build
-pnpm start         # serve production build
-pnpm lint          # eslint (flat config, eslint-config-next)
+pnpm install
+pnpm dev                  # http://localhost:3000 — conflicts with the frontend container on the same port
+pnpm build
+pnpm start
+pnpm lint
+pnpm exec tsc --noEmit
+```
+
+## Environment
+
+```
+NEXT_PUBLIC_API_URL       # e.g. http://localhost:8080 — baked in at build time
+```
+
+That is the only variable the browser bundle may contain. Backend secrets never appear here.
+
+---
+
+## Layout
+
+```
+app/
+├── page.tsx                     landing (email capture → signup)
+├── login/  loginhelp/           sign in, password help
+├── signup/                      regform → planform → payment → verifyEmail/linkSent
+│   └── payment/{card,oxxo,gift_code}
+├── home/                        authenticated area
+│   ├── page.tsx  browse/        profile picker, hero + carousels
+│   ├── movies/ series/ new_arrivals/ my_list/
+│   ├── ManageProfiles/  settings/[uuid]/
+├── watch/[assetId]/             player route (?kind=movie|episode&id=&title=)
+└── admin/                       dashboard, movies/new, movies/[id], series/new, series/[id]
+
+components/
+├── Navbar · Hero · Carousel · CatalogPage · TitleModal · AlertMessage
+├── AuthProvider                 session context
+├── VideoPlayer                  hls.js ABR player
+├── admin/{AdminTitleEditor, UploadPanel, StatusPill}
+└── payments/{PaymentShell, DiscountField, PaymentBreakdown}
+
+utils/
+├── api/client.ts                the only place that talks to the backend
+└── payments.ts                  integer-cent formatting helpers
 ```
 
 ---
 
-## Environment Variables
+## API client (`utils/api/client.ts`)
 
-```
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-```
+- Every request sends `credentials: "include"`. **No token is ever stored in JavaScript** — the access and refresh tokens are HttpOnly cookies set by the auth service. (The backend also accepts `Authorization: Bearer`, but the frontend does not use it.)
+- On a 401 the client performs a **single-flight** refresh — concurrent callers share one in-flight refresh promise — and then retries the original request **once**. A persistent 401 cannot loop.
+- It also refreshes the session in the background every 10 minutes so a long viewing session does not expire mid-playback.
+- `ApiError` carries the HTTP status, so callers can distinguish a real failure from an expected 404 (for example "no watch progress yet").
 
-Both are read by all three Supabase client factories in `utils/supabase/`. Set them in `.env.local` (git-ignored).
+## Route protection (`middleware.ts`)
 
----
+Matches `/home/:path*`, `/admin/:path*`, `/watch/:path*`, `/login`, `/signup`. Unauthenticated users hitting a protected route are redirected to `/login?next=<path>`; authenticated users hitting `/login` or `/signup` are sent to `/home`.
 
-## Directory Structure
+The middleware is a **UX guard, not a security boundary** — authorization is enforced by the backend on every request, which is what actually protects data. Treat any client-side check here as advisory.
 
-```
-frontend/
-├── app/
-│   ├── layout.tsx                    # Root layout ("use client"); Roboto font +
-│   │                                 #   client-side session check that redirects
-│   │                                 #   authed users from / and /login to /home/browse
-│   ├── page.tsx                      # Landing (email capture → localStorage → signup)
-│   ├── login/page.tsx                # Sign-in (signInWithPassword)
-│   ├── loginhelp/page.tsx            # Forgot password
-│   ├── signup/                       # Multi-step sign-up flow
-│   │   ├── layout.tsx
-│   │   ├── page.tsx
-│   │   ├── linkRegistration/         #   email → account link
-│   │   ├── linkSent/
-│   │   ├── verifyEmail/
-│   │   ├── regform/                  #   registration form
-│   │   ├── planform/                 #   plan selection
-│   │   └── payment/                  #   payment method selection
-│   │       ├── page.tsx
-│   │       ├── card/
-│   │       ├── gift_code/
-│   │       └── oxxo/
-│   └── home/                         # Authenticated area
-│       ├── layout.tsx
-│       ├── page.tsx
-│       ├── browse/                   #   main browse (carousels + title modal)
-│       ├── movies/
-│       ├── series/
-│       ├── my_list/                  #   favorites
-│       ├── new_arrivals/
-│       ├── ManageProfiles/
-│       └── settings/[uuid]/          #   per-profile settings
-├── components/
-│   ├── Navbar.tsx
-│   └── AlertMessage.tsx
-├── utils/supabase/
-│   ├── client.ts                     # createBrowserClient (browser)
-│   ├── server.ts                     # createServerClient (Server Components / RSC)
-│   └── middleware.ts                 # createServerClient for Next middleware; refreshes
-│                                     #   session cookies — LOAD BALANCER ENTRY POINT
-├── public/                           # static assets (netflix.png favicon, imagery)
-├── next.config.ts                    # allows remote images from occ-0-7553-114.1.nflxso.net
-├── eslint.config.mjs
-├── postcss.config.mjs
-└── tsconfig.json
-```
+> Next.js 16 warns that the `middleware.ts` convention is deprecated in favour of `proxy`. Migrating is not urgent, but it is coming.
 
----
+## Player (`components/VideoPlayer.tsx`)
 
-## Auth Flow
+- Loads `${NEXT_PUBLIC_API_URL}/api/v1/stream/<assetId>/master.m3u8` with `xhrSetup` setting `withCredentials`, so segment requests carry the session cookie.
+- **hls.js is preferred wherever MSE exists.** The native `<video>` HLS path is only a fallback for engines without MSE (iOS Safari) — Chrome reports `canPlayType("application/vnd.apple.mpegurl")` as `"maybe"` but gives no level information, so preferring it would cost the quality menu and ABR control.
+- Register the `MEDIA_ATTACHED` listener **before** calling `attachMedia()`; hls.js can emit it synchronously, and a listener added afterwards misses it, leaving the source never loaded.
+- Quality menu is built from `hls.levels` (`Auto` plus each rendition). `capLevelToPlayerSize` is on.
+- Error recovery is bounded: up to two network recoveries (each refreshing the session first, then `startLoad()`) and two media recoveries via `recoverMediaError()`. Beyond that it surfaces an error instead of retrying forever. A successful fragment load resets the counters.
+- Resumes from saved watch progress when it is within 95% of the duration, and persists progress every 10 seconds.
 
-1. **Landing (`/`)** captures email → stores in `localStorage` as `signup_email` → routes to `/signup/linkRegistration`.
-2. **Login (`/login`)** calls `supabase.auth.signInWithPassword` client-side, then redirects to `/home/browse`.
-3. **Root layout** (`app/layout.tsx`) runs a client-side `getSession()` check on mount and redirects already-authenticated users away from `/` and `/login` to `/home/browse`.
-4. **Middleware** (`utils/supabase/middleware.ts`) wraps `createServerClient` to refresh session cookies on requests. This is where the planned load-balancer / route-protection logic will live (validate JWT, proxy to auth/catalog/streaming/user microservices, 401 on unauthenticated protected routes).
+## Payments UI
 
-### Supabase client rule of thumb
-- Browser / client components → `utils/supabase/client.ts`
-- Server components → `utils/supabase/server.ts` (pass in the `cookies()` store)
-- Middleware → `utils/supabase/middleware.ts`
-
----
+The client sends `plan_id` and an optional discount `code` — **never a price, subtotal, discount or total**. Plans come from `GET /api/v1/plans`; the discount field previews via `POST /api/v1/discounts/validate`, but the authoritative numbers always come from the payment response. Money is integer cents; format for display and never do float arithmetic on it. Card details are never persisted to `localStorage`.
 
 ## Conventions
 
-- Path alias `@/*` maps to the frontend root (e.g. `@/utils/supabase/client`).
-- Route directories are mostly camelCase/lower_snake; `ManageProfiles` is PascalCase (existing inconsistency — match the neighboring route when adding files).
-- Remote images must have their host whitelisted in `next.config.ts` `images.remotePatterns`.
-- `TODO.txt` tracks ad-hoc frontend tasks.
+- Responsive down to 375px. No page may scroll horizontally at 375 / 768 / 1024 / 1440 — the most common regression. Wide content (tables, carousels) scrolls inside its own container.
+- Inputs at least 16px, or iOS Safari zooms on focus.
+- Artwork and manifests are served by the backend under `/api/v1/stream/...`; use the helper rather than hand-building URLs.

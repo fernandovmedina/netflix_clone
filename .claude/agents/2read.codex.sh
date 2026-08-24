@@ -1,3 +1,3 @@
 #!/bin/bash
 
-tmux capture-pane -t %2 -p | tail -100
+tmux capture-pane -t %7 -p | tail -100

@@ -30,8 +30,15 @@ func TestNoAudioArgs(t *testing.T) {
 }
 func TestAudioArgs(t *testing.T) {
 	args := strings.Join(ffmpegArgs("source.mp4", "out", profileFor(360), 24, true), " ")
-	if !strings.Contains(args, "-c:a aac") || !strings.Contains(args, "-map 0:a:0") {
+	if !strings.Contains(args, "-c:a aac") || !strings.Contains(args, "-map 0:a:0") || !strings.Contains(args, "-b:a 96k") {
 		t.Fatalf("audio args incomplete: %s", args)
+	}
+}
+
+func TestMasterPlaylistIncludesAudioCodec(t *testing.T) {
+	master := masterPlaylist([]variant{{Quality: "1080p", Width: 1920, Height: 1080, Profile: profileFor(1080), Audio: true}})
+	if !strings.Contains(master, `CODECS="avc1.4d401f,mp4a.40.2"`) {
+		t.Fatalf("audio codec absent:\n%s", master)
 	}
 }
 func TestMasterPlaylist(t *testing.T) {

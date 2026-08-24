@@ -56,6 +56,7 @@ export const Navbar = () => {
               <Image src="/gray_profile.png" alt="" width={32} height={32} className="rounded" />
               <div><p className="text-sm font-bold">{user?.name || "Profile"}</p><p className="max-w-40 truncate text-xs text-gray-400">{user?.email}</p></div>
             </div>
+            {user?.role === "admin" && <Link href="/admin" className="mb-3 flex min-h-11 items-center rounded bg-red-600 px-3 text-sm font-bold hover:bg-red-700">Admin panel</Link>}
             <Link href="/home/ManageProfiles" className="mb-3 flex items-center gap-3 text-sm hover:underline"><Edit2 size={20} /> Manage profiles</Link>
             <span className="mb-3 flex items-center gap-3 text-sm text-gray-400"><ArrowRightCircle size={20} /> Transfer profile</span>
             <span className="mb-3 flex items-center gap-3 text-sm text-gray-400"><User size={20} /> Account</span>
@@ -67,7 +68,7 @@ export const Navbar = () => {
       </div>
       {mobileOpen && <div id="mobile-navigation" className="absolute inset-x-3 top-full z-50 mt-1 max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-lg border border-zinc-700 bg-black/95 p-4 shadow-2xl md:hidden">
         <div className="grid gap-1">{navigation.map(([label, path]) => <Link key={path} href={withProfile(path)} onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center rounded px-3 hover:bg-zinc-800">{label}</Link>)}</div>
-        <div className="mt-3 border-t border-zinc-700 pt-3"><p className="px-3 text-sm font-bold">{user?.name || "Profile"}</p><p className="mb-2 truncate px-3 text-xs text-gray-400">{user?.email}</p><Link href="/home/ManageProfiles" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center rounded px-3 hover:bg-zinc-800">Manage profiles</Link><Link href="/loginhelp" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center rounded px-3 hover:bg-zinc-800">Help center</Link><button type="button" onClick={handleLogOut} className="min-h-11 w-full rounded px-3 text-left hover:bg-zinc-800">Log out</button></div>
+        <div className="mt-3 border-t border-zinc-700 pt-3"><p className="px-3 text-sm font-bold">{user?.name || "Profile"}</p><p className="mb-2 truncate px-3 text-xs text-gray-400">{user?.email}</p>{user?.role === "admin" && <Link href="/admin" onClick={() => setMobileOpen(false)} className="mb-2 flex min-h-11 items-center rounded bg-red-600 px-3 font-bold hover:bg-red-700">Admin panel</Link>}<Link href="/home/ManageProfiles" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center rounded px-3 hover:bg-zinc-800">Manage profiles</Link><Link href="/loginhelp" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center rounded px-3 hover:bg-zinc-800">Help center</Link><button type="button" onClick={handleLogOut} className="min-h-11 w-full rounded px-3 text-left hover:bg-zinc-800">Log out</button></div>
       </div>}
     </nav>
   );

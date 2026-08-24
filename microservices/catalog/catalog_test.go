@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -83,6 +84,120 @@ func TestInvalidSeasonAndMalformedBodiesReturnOneJSONError(t *testing.T) {
 				t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestAdminMovieMetadataAssignmentsAreTransactional(t *testing.T) {
+	dsn := os.Getenv("PHASE2_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PHASE2_TEST_DATABASE_URL not set")
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	var genreID, actorID, categoryID int
+	if err = pool.QueryRow(context.Background(), `select id_genre from genres where deleted_at is null order by id_genre limit 1`).Scan(&genreID); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(context.Background(), `select id_actor from actors where deleted_at is null order by id_actor limit 1`).Scan(&actorID); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(context.Background(), `select id_category from categories where deleted_at is null order by id_category limit 1`).Scan(&categoryID); err != nil {
+		t.Fatal(err)
+	}
+	name := "metadata-assignment-" + uuid.NewString()
+	body := fmt.Sprintf(`{"title":%q,"duration":90,"genre_ids":[%d,%d],"actor_ids":[%d],"category_ids":[%d]}`, name, genreID, genreID, actorID, categoryID)
+	app := &application{pool: pool}
+	mux := http.NewServeMux()
+	app.routes(mux)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/movies", strings.NewReader(body))
+	req.Header.Set("X-User-Role", "admin")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var out titleMutationResponse
+	if err = json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = pool.Exec(context.Background(), `delete from title_genres where id_title=$1; delete from title_actors where id_title=$1; delete from title_categories where id_title=$1; delete from movies where id_movie=$2; delete from titles where id_title=$1`, out.TitleID, out.ID)
+	}()
+	if len(out.GenreIDs) != 1 || out.GenreIDs[0] != genreID || len(out.ActorIDs) != 1 || out.ActorIDs[0] != actorID || len(out.CategoryIDs) != 1 || out.CategoryIDs[0] != categoryID {
+		t.Fatalf("unexpected create response: %#v", out)
+	}
+	var genres, actors, categories int
+	if err = pool.QueryRow(context.Background(), `select (select count(*) from title_genres where id_title=$1),(select count(*) from title_actors where id_title=$1),(select count(*) from title_categories where id_title=$1)`, out.TitleID).Scan(&genres, &actors, &categories); err != nil {
+		t.Fatal(err)
+	}
+	if genres != 1 || actors != 1 || categories != 1 {
+		t.Fatalf("join counts genres=%d actors=%d categories=%d", genres, actors, categories)
+	}
+	patchBody := fmt.Sprintf(`{"title":%q,"duration":91,"genre_ids":[],"actor_ids":[%d]}`, name, actorID)
+	req = httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/admin/movies/%d", out.ID), strings.NewReader(patchBody))
+	req.Header.Set("X-User-Role", "admin")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if err = pool.QueryRow(context.Background(), `select (select count(*) from title_genres where id_title=$1),(select count(*) from title_actors where id_title=$1),(select count(*) from title_categories where id_title=$1)`, out.TitleID).Scan(&genres, &actors, &categories); err != nil {
+		t.Fatal(err)
+	}
+	if genres != 0 || actors != 1 || categories != 1 {
+		t.Fatalf("replacement join counts genres=%d actors=%d categories=%d", genres, actors, categories)
+	}
+}
+
+func TestAdminSeriesMetadataAssignments(t *testing.T) {
+	dsn := os.Getenv("PHASE2_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PHASE2_TEST_DATABASE_URL not set")
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	var genreID, actorID, categoryID int
+	if err = pool.QueryRow(context.Background(), `select (select id_genre from genres where deleted_at is null order by id_genre limit 1),(select id_actor from actors where deleted_at is null order by id_actor limit 1),(select id_category from categories where deleted_at is null order by id_category limit 1)`).Scan(&genreID, &actorID, &categoryID); err != nil {
+		t.Fatal(err)
+	}
+	name := "series-metadata-" + uuid.NewString()
+	body := fmt.Sprintf(`{"title":%q,"number_of_seasons":1,"genre_ids":[%d],"actor_ids":[%d],"category_ids":[%d]}`, name, genreID, actorID, categoryID)
+	app := &application{pool: pool}
+	mux := http.NewServeMux()
+	app.routes(mux)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/series", strings.NewReader(body))
+	req.Header.Set("X-User-Role", "admin")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var out titleMutationResponse
+	if err = json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = pool.Exec(context.Background(), `delete from title_genres where id_title=$1; delete from title_actors where id_title=$1; delete from title_categories where id_title=$1; delete from seasons where id_series=$2; delete from series where id_series=$2; delete from titles where id_title=$1`, out.TitleID, out.ID)
+	}()
+	patch := fmt.Sprintf(`{"title":%q,"number_of_seasons":1,"genre_ids":[],"actor_ids":[],"category_ids":[%d]}`, name, categoryID)
+	req = httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/admin/series/%d", out.ID), strings.NewReader(patch))
+	req.Header.Set("X-User-Role", "admin")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if err = json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.GenreIDs) != 0 || len(out.ActorIDs) != 0 || len(out.CategoryIDs) != 1 || out.CategoryIDs[0] != categoryID {
+		t.Fatalf("unexpected patch response: %#v", out)
 	}
 }
 func TestNonAdminVisibility(t *testing.T) {

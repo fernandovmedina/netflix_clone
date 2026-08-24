@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,99 @@ type titleInput struct {
 	Year            int16  `json:"year_released"`
 	Duration        int    `json:"duration"`
 	NumberOfSeasons int    `json:"number_of_seasons"`
+	GenreIDs        []int  `json:"genre_ids"`
+	ActorIDs        []int  `json:"actor_ids"`
+	CategoryIDs     []int  `json:"category_ids"`
+}
+
+type titleMutationResponse struct {
+	ID          int   `json:"id"`
+	TitleID     int   `json:"title_id"`
+	GenreIDs    []int `json:"genre_ids"`
+	ActorIDs    []int `json:"actor_ids"`
+	CategoryIDs []int `json:"category_ids"`
+}
+
+var errInvalidMetadataIDs = errors.New("one or more metadata IDs do not exist")
+
+func normalizeIDs(values []int) ([]int, error) {
+	seen := make(map[int]struct{}, len(values))
+	out := make([]int, 0, len(values))
+	for _, value := range values {
+		if value < 1 {
+			return nil, errInvalidMetadataIDs
+		}
+		if _, exists := seen[value]; !exists {
+			seen[value] = struct{}{}
+			out = append(out, value)
+		}
+	}
+	return out, nil
+}
+
+func replaceTitleMetadata(ctx context.Context, tx pgx.Tx, titleID int, in titleInput) (titleMutationResponse, error) {
+	out := titleMutationResponse{TitleID: titleID}
+	sets := []struct {
+		values *[]int
+		table  string
+		id     string
+		join   string
+	}{{&in.GenreIDs, "genres", "id_genre", "title_genres"}, {&in.ActorIDs, "actors", "id_actor", "title_actors"}, {&in.CategoryIDs, "categories", "id_category", "title_categories"}}
+	outputs := []*[]int{&out.GenreIDs, &out.ActorIDs, &out.CategoryIDs}
+	for index, set := range sets {
+		if *set.values == nil {
+			query := fmt.Sprintf("select coalesce(array_agg(%s order by %s),'{}'::int[]) from %s where id_title=$1", set.id, set.id, set.join)
+			if err := tx.QueryRow(ctx, query, titleID).Scan(outputs[index]); err != nil {
+				return out, err
+			}
+			continue
+		}
+		ids, err := normalizeIDs(*set.values)
+		if err != nil {
+			return out, err
+		}
+		*outputs[index] = ids
+		var count int
+		if len(ids) > 0 {
+			query := fmt.Sprintf("select count(*) from %s where %s=any($1) and deleted_at is null", set.table, set.id)
+			if err = tx.QueryRow(ctx, query, ids).Scan(&count); err != nil {
+				return out, err
+			}
+			if count != len(ids) {
+				return out, errInvalidMetadataIDs
+			}
+		}
+		if _, err = tx.Exec(ctx, fmt.Sprintf("delete from %s where id_title=$1", set.join), titleID); err != nil {
+			return out, err
+		}
+		if len(ids) > 0 {
+			query := fmt.Sprintf("insert into %s(id_title,%s) select $1,unnest($2::int[])", set.join, set.id)
+			if _, err = tx.Exec(ctx, query, titleID, ids); err != nil {
+				return out, err
+			}
+		}
+	}
+	return out, nil
+}
+
+func assignDefaultCategory(ctx context.Context, tx pgx.Tx, in *titleInput, name string) error {
+	if in.CategoryIDs != nil {
+		return nil
+	}
+	var id int
+	err := tx.QueryRow(ctx, `insert into categories(name) values($1) on conflict(name) do update set deleted_at=null,updated_at=now() returning id_category`, name).Scan(&id)
+	if err == nil {
+		in.CategoryIDs = []int{id}
+	}
+	return err
+}
+
+func metadataError(w http.ResponseWriter, err error) bool {
+	if errors.Is(err, errInvalidMetadataIDs) {
+		jsonx.Error(w, http.StatusBadRequest, err.Error())
+		return true
+	}
+	return false
 }
 
 func validateTitle(w http.ResponseWriter, in titleInput) bool {
@@ -55,12 +149,24 @@ func (app *application) createMovie(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err = assignDefaultCategory(r.Context(), tx, &in, "Movies"); err != nil {
+		serverError(w, err)
+		return
+	}
 	var titleID, movieID int
 	err = tx.QueryRow(r.Context(), `insert into titles(type,title,description,director,year_released) values('Movie',$1,$2,$3,$4) returning id_title`, strings.TrimSpace(in.Title), in.Description, nullText(in.Director), nullYear(in.Year)).Scan(&titleID)
 	if err == nil {
 		err = tx.QueryRow(r.Context(), `insert into movies(id_title,duration) values($1,$2) returning id_movie`, titleID, nullInt(in.Duration)).Scan(&movieID)
 	}
+	response := titleMutationResponse{}
+	if err == nil {
+		response, err = replaceTitleMetadata(r.Context(), tx, titleID, in)
+		response.ID = movieID
+	}
 	if err != nil {
+		if metadataError(w, err) {
+			return
+		}
 		serverError(w, err)
 		return
 	}
@@ -68,7 +174,7 @@ func (app *application) createMovie(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	jsonx.Write(w, 201, map[string]any{"id": movieID, "title_id": titleID})
+	jsonx.Write(w, 201, response)
 }
 func (app *application) patchMovie(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(w, r, "id")
@@ -79,10 +185,14 @@ func (app *application) patchMovie(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &in) || !validateTitle(w, in) {
 		return
 	}
-	tag, err := app.pool.Exec(r.Context(), `update titles t set title=$2,description=$3,director=$4,year_released=$5,updated_at=now() from movies m where m.id_movie=$1 and m.id_title=t.id_title and m.deleted_at is null`, id, strings.TrimSpace(in.Title), in.Description, nullText(in.Director), nullYear(in.Year))
-	if err == nil {
-		_, err = app.pool.Exec(r.Context(), `update movies set duration=$2,updated_at=now() where id_movie=$1 and deleted_at is null`, id, nullInt(in.Duration))
+	tx, err := app.pool.Begin(r.Context())
+	if err != nil {
+		serverError(w, err)
+		return
 	}
+	defer tx.Rollback(r.Context())
+	var titleID int
+	tag, err := tx.Exec(r.Context(), `update titles t set title=$2,description=$3,director=$4,year_released=$5,updated_at=now() from movies m where m.id_movie=$1 and m.id_title=t.id_title and m.deleted_at is null`, id, strings.TrimSpace(in.Title), in.Description, nullText(in.Director), nullYear(in.Year))
 	if err != nil {
 		serverError(w, err)
 		return
@@ -91,7 +201,24 @@ func (app *application) patchMovie(w http.ResponseWriter, r *http.Request) {
 		jsonx.Error(w, 404, "movie not found")
 		return
 	}
-	w.WriteHeader(204)
+	err = tx.QueryRow(r.Context(), `update movies set duration=$2,updated_at=now() where id_movie=$1 and deleted_at is null returning id_title`, id, nullInt(in.Duration)).Scan(&titleID)
+	response := titleMutationResponse{}
+	if err == nil {
+		response, err = replaceTitleMetadata(r.Context(), tx, titleID, in)
+		response.ID = id
+	}
+	if err != nil {
+		if metadataError(w, err) {
+			return
+		}
+		serverError(w, err)
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		serverError(w, err)
+		return
+	}
+	jsonx.Write(w, http.StatusOK, response)
 }
 func (app *application) deleteMovie(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(w, r, "id")
@@ -120,6 +247,10 @@ func (app *application) createSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err = assignDefaultCategory(r.Context(), tx, &in, "Series"); err != nil {
+		serverError(w, err)
+		return
+	}
 	var titleID, seriesID int
 	err = tx.QueryRow(r.Context(), `insert into titles(type,title,description,director,year_released) values('TV Show',$1,$2,$3,$4) returning id_title`, strings.TrimSpace(in.Title), in.Description, nullText(in.Director), nullYear(in.Year)).Scan(&titleID)
 	if err == nil {
@@ -128,7 +259,15 @@ func (app *application) createSeries(w http.ResponseWriter, r *http.Request) {
 	for n := 1; err == nil && n <= in.NumberOfSeasons; n++ {
 		_, err = tx.Exec(r.Context(), `insert into seasons(id_series,season_number,number_of_episodes) values($1,$2,0)`, seriesID, n)
 	}
+	response := titleMutationResponse{}
+	if err == nil {
+		response, err = replaceTitleMetadata(r.Context(), tx, titleID, in)
+		response.ID = seriesID
+	}
 	if err != nil {
+		if metadataError(w, err) {
+			return
+		}
 		serverError(w, err)
 		return
 	}
@@ -136,7 +275,7 @@ func (app *application) createSeries(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	jsonx.Write(w, 201, map[string]any{"id": seriesID, "title_id": titleID})
+	jsonx.Write(w, 201, response)
 }
 func (app *application) patchSeries(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(w, r, "id")
@@ -158,15 +297,6 @@ func (app *application) patchSeries(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	tag, err := tx.Exec(r.Context(), `update titles t set title=$2,description=$3,director=$4,year_released=$5,updated_at=now() from series s where s.id_series=$1 and s.id_title=t.id_title and s.deleted_at is null`, id, strings.TrimSpace(in.Title), in.Description, nullText(in.Director), nullYear(in.Year))
-	if err == nil {
-		_, err = tx.Exec(r.Context(), `update series set number_of_seasons=$2,updated_at=now() where id_series=$1`, id, in.NumberOfSeasons)
-	}
-	if err == nil {
-		_, err = tx.Exec(r.Context(), `insert into seasons(id_series,season_number,number_of_episodes) select $1,n,0 from generate_series(1,$2) n on conflict(id_series,season_number) do update set deleted_at=null`, id, in.NumberOfSeasons)
-	}
-	if err == nil {
-		_, err = tx.Exec(r.Context(), `update seasons set deleted_at=now(),updated_at=now() where id_series=$1 and season_number>$2 and deleted_at is null`, id, in.NumberOfSeasons)
-	}
 	if err != nil {
 		serverError(w, err)
 		return
@@ -175,11 +305,33 @@ func (app *application) patchSeries(w http.ResponseWriter, r *http.Request) {
 		jsonx.Error(w, 404, "series not found")
 		return
 	}
+	if _, err = tx.Exec(r.Context(), `update series set number_of_seasons=$2,updated_at=now() where id_series=$1`, id, in.NumberOfSeasons); err == nil {
+		_, err = tx.Exec(r.Context(), `insert into seasons(id_series,season_number,number_of_episodes) select $1,n,0 from generate_series(1,$2) n on conflict(id_series,season_number) do update set deleted_at=null`, id, in.NumberOfSeasons)
+	}
+	if err == nil {
+		_, err = tx.Exec(r.Context(), `update seasons set deleted_at=now(),updated_at=now() where id_series=$1 and season_number>$2 and deleted_at is null`, id, in.NumberOfSeasons)
+	}
+	var titleID int
+	if err == nil {
+		err = tx.QueryRow(r.Context(), `select id_title from series where id_series=$1`, id).Scan(&titleID)
+	}
+	response := titleMutationResponse{}
+	if err == nil {
+		response, err = replaceTitleMetadata(r.Context(), tx, titleID, in)
+		response.ID = id
+	}
+	if err != nil {
+		if metadataError(w, err) {
+			return
+		}
+		serverError(w, err)
+		return
+	}
 	if err = tx.Commit(r.Context()); err != nil {
 		serverError(w, err)
 		return
 	}
-	w.WriteHeader(204)
+	jsonx.Write(w, http.StatusOK, response)
 }
 func (app *application) deleteSeries(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(w, r, "id")
@@ -414,6 +566,81 @@ func (app *application) deleteGenre(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tag, err := app.pool.Exec(r.Context(), `update genres set deleted_at=now(),updated_at=now() where id_genre=$1 and deleted_at is null`, id)
+	deleted(w, tag, err)
+}
+
+func (app *application) createActor(w http.ResponseWriter, r *http.Request) {
+	app.createReference(w, r, "actors", "id_actor")
+}
+func (app *application) patchActor(w http.ResponseWriter, r *http.Request) {
+	app.patchReference(w, r, "actors", "id_actor", "actor")
+}
+func (app *application) deleteActor(w http.ResponseWriter, r *http.Request) {
+	app.deleteReference(w, r, "actors", "id_actor")
+}
+func (app *application) createCategory(w http.ResponseWriter, r *http.Request) {
+	app.createReference(w, r, "categories", "id_category")
+}
+func (app *application) patchCategory(w http.ResponseWriter, r *http.Request) {
+	app.patchReference(w, r, "categories", "id_category", "category")
+}
+func (app *application) deleteCategory(w http.ResponseWriter, r *http.Request) {
+	app.deleteReference(w, r, "categories", "id_category")
+}
+
+func (app *application) createReference(w http.ResponseWriter, r *http.Request, table, idColumn string) {
+	var in genreInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		jsonx.Error(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	var id int
+	query := fmt.Sprintf("insert into %s(name) values($1) on conflict(name) do update set deleted_at=null,updated_at=now() returning %s", table, idColumn)
+	if err := app.pool.QueryRow(r.Context(), query, name).Scan(&id); err != nil {
+		serverError(w, err)
+		return
+	}
+	jsonx.Write(w, http.StatusCreated, map[string]int{"id": id})
+}
+
+func (app *application) patchReference(w http.ResponseWriter, r *http.Request, table, idColumn, label string) {
+	id, ok := pathInt(w, r, "id")
+	if !ok {
+		return
+	}
+	var in genreInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		jsonx.Error(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	query := fmt.Sprintf("update %s set name=$2,updated_at=now() where %s=$1 and deleted_at is null", table, idColumn)
+	tag, err := app.pool.Exec(r.Context(), query, id, name)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		jsonx.Error(w, http.StatusNotFound, label+" not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (app *application) deleteReference(w http.ResponseWriter, r *http.Request, table, idColumn string) {
+	id, ok := pathInt(w, r, "id")
+	if !ok {
+		return
+	}
+	query := fmt.Sprintf("update %s set deleted_at=now(),updated_at=now() where %s=$1 and deleted_at is null", table, idColumn)
+	tag, err := app.pool.Exec(r.Context(), query, id)
 	deleted(w, tag, err)
 }
 

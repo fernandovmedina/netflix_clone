@@ -2,7 +2,9 @@
 
 ## Overview
 
-A full Netflix clone with frontend, backend microservices, load balancer middleware, and a PostgreSQL database hosted on Supabase. The goal is feature parity with real Netflix: browsing, authentication, watch progress, favorites, video playback via HLS.
+A full Netflix clone: Next.js frontend, Go microservices behind an nginx load balancer, a PostgreSQL database, and a real adaptive-bitrate video pipeline. Everything runs locally through Docker Compose.
+
+**Supabase has been removed.** Authentication, sessions, user management and all data access are implemented in this codebase against its own PostgreSQL instance. There is no GoTrue, no `@supabase/ssr`, and no hosted dependency of any kind — `supabase/config.toml` is a leftover of the old setup and is not used.
 
 **Author:** Fernando Vazquez / [@fernandovmedina](https://github.com/fernandovmedina)
 
@@ -12,23 +14,40 @@ A full Netflix clone with frontend, backend microservices, load balancer middlew
 
 ```
 Browser (Next.js 16, localhost:3000)
-    │
+    │  fetch(..., { credentials: "include" }) → localhost:8080
     ▼
-nginx load balancer (localhost:8080) — /microservices/nginx/nginx.conf
-    │   least_conn across 5 auth containers, logs which upstream served
+nginx (localhost:8080) — microservices/nginx/nginx.conf
+    │   Docker-DNS resolver, re-resolves replicas at request time
+    │   rate limits on login/signup/refresh, connection cap on streaming
     ▼
-Auth Microservice ×5 (Go) — /microservices/auth
-    │   • signup/login via Supabase Auth (GoTrue REST)
-    │   • verifies Supabase JWT locally (JWKS) on every request
-    │   • CORS allowlist (cors.go)
-    │   • proxies authenticated /api/v1/* to the owning service
+auth ×3 — the only tier exposed to the browser
+    │   • signup/login/logout/refresh, bcrypt(12), JWT access + rotating refresh
+    │   • Google OAuth (PKCE)
+    │   • verifies the access token on every request, injects X-User-Id / X-User-Email
+    │   • reverse-proxies authenticated /api/v1/* to the owning service via nginx :8081
     │
-    ├── [future] Catalog Microservice  — titles, movies, series, episodes
-    ├── [future] Streaming Microservice — HLS manifest serving
-    └── [future] User Microservice     — watch progress, favorites
+    ├── catalog ×2    titles, movies, series, seasons, episodes, admin CRUD, upload intake
+    ├── streaming ×2  HLS manifests and segments from the shared media volume
+    └── user ×2       progress, favorites, profiles, plans, discounts, payments
+         │
+worker ×2 — claims transcode jobs from PostgreSQL, runs ffprobe/ffmpeg, writes HLS
+postgres — single source of truth for data *and* for the job queue
+media volume — shared between catalog (uploads), worker (output) and streaming (reads)
 ```
 
-The auth service is the single entry point / load balancer of the backend (per `docs/obsidian/backend/INSTRUCTIONS.md` — this supersedes the earlier plan to put the load balancer in Next.js middleware). Orchestration lives at `microservices/docker-compose.yaml`: 5 auth containers (`auth1`–`auth5`) behind nginx published on `localhost:8080`.
+Every service is stateless. Sessions live in PostgreSQL, media lives on a shared volume, and the job queue is a PostgreSQL table — so any replica can serve any request, and no user is pinned to an instance.
+
+### Scaling
+
+Services are declared once with `deploy.replicas`, and nginx proxies to the **compose service name** through Docker's embedded DNS (`resolver 127.0.0.11 valid=1s ipv6=off` with `resolver_timeout 1s`, plus a variable `proxy_pass http://$backend$request_uri`). Adding capacity therefore needs no config change at all:
+
+```bash
+docker compose up -d --scale auth=5 auth
+```
+
+nginx picks up the new replicas within the one-second DNS TTL, without a restart or an edit.
+
+> **Why the variable `proxy_pass`:** OSS nginx resolves the hostnames in an `upstream` block **once at worker startup** and caches the IPs forever. Because Docker reassigns container IPs on restart, the old `upstream auth_service { server auth1:8080; ... }` form silently routed traffic to whatever service had inherited that IP — in practice a third of all authenticated requests were being handed to the streaming service, which 404'd them. Do not reintroduce a static `upstream` block for these tiers.
 
 ---
 
@@ -37,161 +56,150 @@ The auth service is the single entry point / load balancer of the backend (per `
 ```
 netflix_clone/
 ├── CLAUDE.md
+├── INTEGRATION.md            # the build brief this project is executing
+├── docker-compose.yaml       # the whole stack: postgres, migrate, seed, all services, nginx, frontend
+├── .env                      # local secrets (git-ignored); .env.example documents the keys
 ├── database/
-│   ├── database.sql     # Full PostgreSQL schema
-│   └── exec.sql         # Execution helper
-├── frontend/            # Next.js 16 app (React 19, TypeScript, Tailwind 4)
-│   ├── app/
-│   │   ├── page.tsx              # Landing page (email capture, FAQ, carousel)
-│   │   ├── login/page.tsx        # Sign-in page (Supabase auth)
-│   │   ├── loginhelp/page.tsx    # Forgot password
-│   │   ├── signup/               # Multi-step sign-up flow (4 steps)
-│   │   └── home/                 # Authenticated area
-│   │       ├── layout.tsx
-│   │       └── page.tsx          # Browse page with carousels + title modal
-│   ├── components/
-│   │   ├── Navbar.tsx
-│   │   └── AlertMessage.tsx
-│   └── utils/supabase/
-│       ├── client.ts     # Browser Supabase client
-│       ├── server.ts     # Server-side Supabase client
-│       └── middleware.ts # Next.js middleware — session handling + load balancer entry point
-├── microservices/
-│   ├── docker-compose.yaml  # 5 auth containers + nginx LB on localhost:8080
-│   ├── nginx/
-│   │   └── nginx.conf   # upstream auth1..auth5, least_conn, upstream logging
-│   └── auth/            # Go microservice (see auth/CLAUDE.md + auth/README.md)
-│       ├── main.go       # HTTP server, routes
-│       ├── handlers.go   # signup/login/user handlers
-│       ├── middleware.go # requireAuth (JWT) + request logging
-│       ├── jwt.go        # Supabase JWT verification (JWKS, HS256 fallback)
-│       ├── cors.go       # manual origin allowlist (localhost:3000)
-│       ├── proxy.go      # route → microservice reverse proxy
-│       ├── go.mod        # module: github.com/fernandovmedina/netflix-clone/microservices/auth
-│       ├── Dockerfile    # multi-stage build → alpine
-│       └── database/
-│           ├── conndb.go    # pgxpool via DATABASE_URL
-│           ├── gotrue.go    # Supabase Auth REST client + Session/User types
-│           ├── login.go     # password grant
-│           ├── signup.go    # signup with name in user metadata
-│           └── getSession.go # GET /auth/v1/user (revocation-aware)
-└── supabase/
-    └── config.toml      # project_id = "netflix_clone", local API port 54321, DB port 54322
+│   ├── migrations/           # the real SQL migrations — source of truth
+│   ├── seed/main.go          # seed importer implementation
+│   └── database.sql          # legacy schema reference, not used
+├── docs/ARCHITECTURE.md      # the build contract: topology, schema, pipeline, API, milestones
+├── seed/                     # catalog seed: movies/, series/, video/video.mp4, artwork
+├── frontend/                 # Next.js 16, React 19, TypeScript, Tailwind 4, pnpm
+│   ├── app/                  # landing, login, signup flow, home/browse, watch, admin
+│   ├── components/           # Navbar, Carousel, Hero, TitleModal, VideoPlayer, payments/, admin/
+│   └── utils/api/client.ts   # cookie-based API client with single-flight 401 refresh
+└── microservices/
+    ├── nginx/nginx.conf      # :80 public edge, :8081 internal tier
+    ├── shared/               # jwtutil, authctx, database, jsonx, migrate, renditions, storage
+    ├── migrate/              # Dockerfile only; runner is shared/migrate/main.go, SQL in database/migrations
+    ├── seed/                 # Dockerfile only; importer is database/seed/main.go
+    ├── auth/                 # entry point: auth, OAuth, JWT middleware, reverse proxy
+    ├── catalog/              # public reads + /api/v1/admin/* writes + upload intake
+    ├── streaming/            # manifest and segment serving
+    ├── user/                 # progress, favorites, profiles, plans, discounts, payments
+    └── worker/               # ffprobe → ladder → ffmpeg → HLS
 ```
 
 ---
 
-## Database Schema (`database/database.sql`)
+## Authentication
 
-PostgreSQL (Supabase-compatible). All tables use soft-delete (`deleted_at`).
-
-| Table | Purpose |
-|---|---|
-| `actors` | Actor catalog |
-| `categories` | Content categories |
-| `genres` | Genre tags |
-| `titles` | Parent record for all content (enum: `Movie` / `TV Show`) |
-| `movies` | Extends `titles`; has `duration`, `hls_manifest_path` |
-| `series` | Extends `titles`; has `number_of_seasons` |
-| `seasons` | Belongs to `series` |
-| `episodes` | Belongs to `seasons`; has `duration`, `hls_manifest_path` |
-| `title_actors` | M2M join |
-| `title_categories` | M2M join |
-| `title_genres` | M2M join |
-| `watch_progress` | Per-user progress (movie XOR episode, in seconds) |
-| `favorites` | Per-user title bookmarks |
-
-`user_id` in `watch_progress` and `favorites` is a `uuid` that maps to Supabase Auth users — no explicit FK to `auth.users` in the SQL file.
+- **Passwords:** bcrypt, cost 12. Login compares against a constant dummy hash when the user does not exist, so response timing does not leak account existence.
+- **Access token:** JWT (`ACCESS_TOKEN_TTL`), delivered as an **HttpOnly** cookie. Not readable from JavaScript.
+- **Refresh token:** opaque, stored hashed in `sessions`, rotated on every use (`REFRESH_TOKEN_TTL`, default 720h). Reuse of an already-rotated token invalidates the session family — a stolen refresh token cannot be replayed.
+- **Google OAuth:** PKCE (S256) with single-use `oauth_states` rows carrying the verifier and a 10-minute expiry. Start at `GET /api/v1/auth/google`, callback at `/api/v1/auth/google/callback`.
+- **Authorization:** `requireAuth` on `/api/v1/*`, `requireAdmin` on `/api/v1/admin` and `/api/v1/admin/`. Downstream services trust `X-User-Id`/`X-User-Email` **only** because auth strips any inbound copy and sets them itself.
+- Auth injects `X-User-Id`, `X-User-Email` **and** `X-User-Role` downstream.
+- Logout revokes the refresh-token record and clears the cookies, but an access JWT already copied elsewhere stays valid until it expires (`ACCESS_TOKEN_TTL`, 15 minutes locally). Sessions are not checked per-request against the database.
+- Any replica can mint, verify, refresh or revoke a session, because all session state is in PostgreSQL.
 
 ---
 
-## Frontend Stack
+## Video Pipeline
 
-- **Framework:** Next.js 16 (App Router), React 19
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS v4
-- **UI libs:** MUI v9 (`@mui/material`), `@deemlol/next-icons`
-- **Auth:** `@supabase/ssr` + `@supabase/supabase-js`
-- **Package manager:** Bun (has `bun.lock`); npm also present
+**Upload → ready** (the HTTP request never waits for the transcode):
 
-### Key env vars (frontend)
-```
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-```
+1. Admin uploads to `POST /api/v1/admin/movies/{id}/video` or `.../episodes/{id}/video`.
+2. Catalog validates the target exists, sniffs the content type from the bytes, streams to `media/sources/<asset-id>/source<ext>` (`.mp4`, `.mov`, `.mkv` or `.webm`, matched against the sniffed MIME type) under a size cap, and inserts a `video_assets` row plus a `video_jobs` row.
+3. It responds **202** with `{asset_id, status: "pending"}`.
+4. A worker claims the job with `FOR UPDATE SKIP LOCKED` and a 30-minute lease, heartbeated while ffmpeg runs. Every job and asset write is fenced on still owning the lease, so a stale worker cannot clobber newer state.
+5. ffprobe determines the source resolution; the ladder emits only renditions at or below it (`144, 240, 360, 480, 720, 1080, 1440`) — **never upscaled**.
+6. ffmpeg encodes H.264 (main, yuv420p, `scale=-2:H` so dimensions stay even and the aspect ratio is preserved) with per-rendition bitrate/maxrate/bufsize, aligned keyframes (`-force_key_frames expr:gte(t,n_forced*6)`, `sc_threshold 0`) so ABR switching is seamless.
+7. Output targets 6-second VOD segments (`-hls_time 6`; the final segment is usually shorter): `hls/<asset-id>/<quality>/playlist.m3u8` plus `seg_%05d.ts`, and a `master.m3u8` advertising every rendition. Its `CODECS` attribute is hardcoded to `avc1.4d401f`, plus `mp4a.40.2` when the source has audio — it is not derived per encoded stream.
+8. The asset flips to `ready` only after the whole ladder succeeds; failures record the error and terminate after `max_attempts`.
 
-### Auth flow
-1. Landing page (`/`) captures email → stores in `localStorage` as `signup_email` → pushes to `/signup/linkRegistration`
-2. Login page (`/login`) calls `supabase.auth.signInWithPassword` directly from the client, then redirects to `/home/browse`
-3. `frontend/utils/supabase/middleware.ts` wraps `createServerClient` and refreshes session cookies
+**Serving:** streaming resolves the path, refuses anything escaping `MEDIA_ROOT` (including via symlink), requires the asset to be `ready` **and** its title published, and sends bytes with `ServeContent` — range requests supported, nothing buffered through memory. Segments are `immutable, max-age=31536000`; every upload gets a fresh asset id, so a re-upload can never be served stale segments.
+
+Storage sits behind a `Store` interface (`Put`/`Open`/`Path`/`Remove`) with a local-volume implementation. **It is not yet S3-swappable:** `Path` hands out a local filesystem path, the worker uses `filepath`/`os.Rename`/`Walk` and temp directories directly, and streaming bypasses `Store` entirely with `os.Open`. Introducing object storage would mean changing the interface, the worker's staging/publish step and the streaming read path — the abstraction is a starting point, not a finished seam.
 
 ---
 
-## Load Balancer (nginx + auth service)
+## Payments
 
-Per `docs/obsidian/backend/INSTRUCTIONS.md`, the backend load balancer is nginx in front of 5 auth-service containers (not Next.js middleware):
-1. nginx (`microservices/nginx/nginx.conf`) distributes requests (`least_conn`) across `auth1`–`auth5` and logs which upstream served each request
-2. Each auth container validates the Supabase session JWT (401 for unauthenticated access) and proxies `/api/v1/*` to the owning microservice, forwarding `X-User-Id`/`X-User-Email`
-3. To scale: add `authN` to `docker-compose.yaml` and register `server authN:8080;` in `nginx.conf`
+Money is calculated **only** on the backend. The client sends `plan_id` and an optional discount `code` — never a price, subtotal, discount or total, and any such field in the request body is ignored.
+
+- **Card:** simulated authorization; only brand and last four digits are persisted, never the PAN.
+- **OXXO:** generates a voucher reference and expiry; `POST /api/v1/payments/oxxo/{ref}/simulate-payment` completes it. This is explicitly a local simulation and is kept separate from any real-provider path.
+- **Discounts:** fixed or percent, validated server-side against active/starts_at/expires_at/max_redemptions/per_user_limit, with distinct errors per failure. Note `unique(discount_id, user_id)` makes the effective per-user maximum **always 1**, whatever `per_user_limit` says. Redemption is a transactional `SELECT ... FOR UPDATE` plus a unique constraint, so concurrent attempts on a single-use code produce exactly one redemption (the loser gets 409).
+- **Subscription activation:** a card payment is marked paid immediately and activates a one-month subscription. An OXXO voucher starts `pending` with a 72-hour expiry and activates the subscription only when simulated.
+- A discount redemption is consumed when the OXXO voucher is **created**, not when it is paid, and voucher expiry does not release it.
+- The whole simulation path can be disabled with `PAYMENTS_SIMULATION_ENABLED=false`.
+- **There is no crypto payment method** and never was one.
 
 ---
 
-## Auth Microservice (Go)
+## Database
 
-- Module: `github.com/fernandovmedina/netflix-clone/microservices/auth` — full docs in `microservices/auth/README.md`
-- Go version: 1.25.x
-- Dependencies: `pgx/v5` (pgxpool), `godotenv`, `golang-jwt/jwt/v5`, `MicahParks/keyfunc/v3` (JWKS)
-- Env (`.env.local`, git-ignored): `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`; optional `SUPABASE_JWT_SECRET` (legacy HS256), `PORT`, `CATALOG_SERVICE_URL`, `STREAMING_SERVICE_URL`, `USER_SERVICE_URL`
-- Endpoints: `GET /health`, `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`, `GET /api/v1/auth/user` (returns `{name, email, token}`), plus authenticated reverse proxy for all other `/api/v1/*` routes
-- Signup/login call the Supabase Auth (GoTrue) REST API so tokens are identical to the ones supabase-js issues to the frontend; JWTs are verified locally against the project JWKS
-- Every request logs the serving container: `[auth3] GET /api/v1/... -> 200`
+PostgreSQL, owned by this project. SQL migrations live in `database/migrations` and are applied at startup by the runner in `microservices/shared/migrate` (the `microservices/migrate` directory holds only its Dockerfile). `database/database.sql` is a historical reference. The runner also bootstraps the admin account from `ADMIN_EMAIL`/`ADMIN_PASSWORD` — changing `ADMIN_PASSWORD` later does **not** rotate an existing password hash.
+
+`actors` · `categories` · `genres` · `titles` · `movies` · `series` · `seasons` · `episodes` · `title_actors` · `title_categories` · `title_genres` · `users` · `sessions` · `oauth_states` · `profiles` · `watch_progress` · `favorites` · `video_assets` · `video_jobs` · `plans` · `subscriptions` · `payments` · `discounts` · `discount_redemptions` · `schema_migrations`
+
+Content tables keep soft-delete (`deleted_at`). `user_id` columns are real foreign keys to `users`. Profiles are capped at five per user, with names constrained to 1–50 characters in both the application and the database.
 
 ---
 
 ## Local Development
 
-### Frontend
 ```bash
-cd frontend
-bun dev        # or: npm run dev
-```
-Runs on http://localhost:3000
-
-### Supabase (local)
-```bash
-supabase start
-```
-- API: http://localhost:54321
-- DB: postgresql://localhost:54322
-
-### Auth microservice
-```bash
-# single instance (reads microservices/auth/.env.local)
-cd microservices/auth
-go run .
-
-# load-balanced stack: 5 containers + nginx on http://localhost:8080
-cd microservices
+# whole stack (postgres + migrations + seed + all services + nginx + frontend)
 docker compose up -d --build
+
+# frontend only, against the containerized backend
+cd frontend && pnpm dev        # localhost:3000
+```
+
+- Frontend: http://localhost:3000 · API: http://localhost:8080 · PostgreSQL: localhost:5433
+- `migrate` and `seed` are one-shot services that must exit 0 before the app tiers start.
+- Note: if you run `pnpm dev` on port 3000, the `frontend` container cannot bind and will exit.
+
+### Environment (`.env`, git-ignored — see `.env.example`)
+
+`POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` · `DATABASE_URL` · `JWT_SECRET` · `ACCESS_TOKEN_TTL` · `REFRESH_TOKEN_TTL` · `COOKIE_SECURE` · `GOOGLE_CLIENT_ID` · `GOOGLE_CLIENT_SECRET` · `GOOGLE_REDIRECT_URL` · `FRONTEND_URL` · `CORS_ALLOWED_ORIGINS` · `CATALOG_SERVICE_URL` · `STREAMING_SERVICE_URL` · `USER_SERVICE_URL` · `MEDIA_ROOT` · `MAX_UPLOAD_BYTES` · `ADMIN_EMAIL` · `ADMIN_PASSWORD` · `NEXT_PUBLIC_API_URL` · `FRONTEND_PORT` (default 3000) · `PAYMENTS_SIMULATION_ENABLED` (default true) · `WORKER_CONCURRENCY` (default 1)
+
+Only `NEXT_PUBLIC_*` reaches the browser bundle. Nothing else may.
+
+### Tests
+
+```bash
+cd microservices/<service> && go test -race ./...        # unit tests: auth, catalog, streaming, user, worker, shared
+cd microservices/integration && go test -tags=integration ./...   # end-to-end, needs the stack up
+cd frontend && pnpm build && pnpm lint && pnpm exec tsc --noEmit
 ```
 
 ---
 
-## What's Built vs. What's Planned
+## API Surface
 
-### Built
-- Landing page (hero, FAQ accordion, carousels, footer)
-- Login page (email/password + "use a sign-in code" toggle)
-- Supabase auth integration (client-side sign-in)
-- Home/browse page (carousels, title detail modal with episodes list)
-- Full PostgreSQL schema
-- Auth microservice: HTTP server, signup/login/user endpoints (Supabase Auth), JWT middleware (JWKS), CORS allowlist, reverse proxy to future services
-- nginx load balancer + docker-compose (5 auth containers, `localhost:8080`)
-- Supabase middleware cookie handler
+All routes are reached through `localhost:8080` and require the session cookie unless noted.
 
-### Planned / In Progress
-- Frontend: point API calls at the load balancer (`http://localhost:8080`) with the Supabase access token as Bearer
-- Catalog microservice (list titles, movies, series, episodes) → set `CATALOG_SERVICE_URL`
-- Streaming microservice (HLS manifest serving) → set `STREAMING_SERVICE_URL`
-- User microservice (watch progress, favorites) → set `USER_SERVICE_URL`
-- Sign-up multi-step flow completion (plan selection, payment, profile)
+| Area | Routes |
+|---|---|
+| auth | `POST /api/v1/auth/{signup,login,logout,refresh}` (public) · `GET /api/v1/auth/me` · `GET /api/v1/auth/google[/callback]` (public) |
+| catalog | `GET /api/v1/{titles,titles/{id},movies/{id},series/{id},genres,categories,actors,home}` |
+| catalog admin | `POST/PATCH/DELETE /api/v1/admin/{movies,series,seasons,episodes,genres}` · `POST /api/v1/admin/{movies,episodes}/{id}/video` · `POST /api/v1/admin/titles/{id}/{thumbnail,publish}` · `GET /api/v1/admin/assets/{id}` |
+| streaming | `GET /api/v1/stream/{path...}` — `master.m3u8`, `<quality>/playlist.m3u8`, segments, artwork |
+| user | `GET/PUT /api/v1/progress/{kind}/{id}` · `GET /api/v1/progress/continue` · `GET/POST/DELETE /api/v1/favorites` · `GET/POST/GET/PATCH/DELETE /api/v1/profiles[/{id}]` |
+| payments | `GET /api/v1/plans` · `POST /api/v1/discounts/validate` · `POST /api/v1/payments/{card,oxxo}` · `POST /api/v1/payments/oxxo/{ref}/simulate-payment` · `GET /api/v1/payments/{id}` |
+
+Public catalog reads return only published titles whose asset is `ready`; the admin projection additionally exposes `pending`/`processing`/`failed` state.
+
+---
+
+## Frontend Notes
+
+- **Player** (`components/VideoPlayer.tsx`): hls.js with ABR, a manual quality menu built from `hls.levels`, resume-from-progress, and bounded recovery — up to two network recoveries (each refreshing the session, then `startLoad()`) and two media recoveries, after which it surfaces an error rather than retrying forever. hls.js is preferred wherever MSE exists; the native `<video>` HLS path is a fallback for engines without it, such as iOS Safari. Register the `MEDIA_ATTACHED` listener **before** `attachMedia()` — hls.js can emit it synchronously, and a listener added afterwards misses it, leaving the source never loaded.
+- **API client** (`utils/api/client.ts`): cookies only — no token is ever held in JS. A 401 triggers a single-flight refresh, then one retry; it also refreshes in the background every 10 minutes so long viewing sessions do not expire mid-playback. (The backend accepts `Authorization: Bearer` too, but the frontend uses cookies exclusively.)
+- **Middleware** matches `/home`, `/admin`, `/watch`, `/login` and `/signup`. It is a UX guard, not a security boundary — the backend authorizes every request, and that is what actually protects data.
+- Money arrives as integer cents and is formatted for display; no float arithmetic.
+
+---
+
+## Hard Rules
+
+- Never trust prices, totals or discounts from the client.
+- Never serve media by reading a whole file into memory, and never expose the uploaded sources — only transcoded HLS output.
+- Never upscale a rendition above the source resolution.
+- Never let a transcode block an HTTP request, and never use an in-memory job queue — it breaks horizontal scaling.
+- Never pin a session to an instance.
+- Never commit generated media or `.env`.

@@ -15,5 +15,5 @@ const colors: Record<string, string> = {
 export function StatusPill({ status }: StatusPillProps) {
   const normalized = status.toLowerCase();
   const label = normalized === "pending" ? "Processing" : normalized.charAt(0).toUpperCase() + normalized.slice(1);
-  return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${colors[normalized] ?? colors.draft}`}>{label}</span>;
+  return <span className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold ring-1 ${colors[normalized] ?? colors.draft}`}>{label}</span>;
 }

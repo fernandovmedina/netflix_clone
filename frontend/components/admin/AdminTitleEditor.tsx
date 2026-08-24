@@ -1,7 +1,7 @@
 "use client";
 
 import { UploadPanel } from "@/components/admin/UploadPanel";
-import { adminApi, apiRequest, type AdminTitleInput, type Season, type TitleDetail } from "@/utils/api/client";
+import { adminApi, apiRequest, catalogApi, type AdminTitleInput, type MetadataReference, type Season, type TitleDetail } from "@/utils/api/client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 type EditorKind = "movies" | "series";
 type AdminTitleEditorProps = { kind: EditorKind; titleId?: number };
 
-const emptyForm: AdminTitleInput = { title: "", description: "", director: "", year_released: new Date().getFullYear(), duration: 0, number_of_seasons: 1 };
+const emptyForm: AdminTitleInput = { title: "", description: "", director: "", year_released: new Date().getFullYear(), duration: 0, number_of_seasons: 1, genre_ids: [], actor_ids: [] };
 
 export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
   const router = useRouter();
@@ -26,6 +26,34 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
   const [saved, setSaved] = useState("");
   const [error, setError] = useState("");
   const [assetReady, setAssetReady] = useState(false);
+  const [genres, setGenres] = useState<MetadataReference[]>([]);
+  const [actors, setActors] = useState<MetadataReference[]>([]);
+  const [metadataLoading, setMetadataLoading] = useState(true);
+  const [metadataError, setMetadataError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setMetadataLoading(true);
+    Promise.all([catalogApi.genres(), catalogApi.actors()])
+      .then(([genreOptions, actorOptions]) => {
+        if (!active) return;
+        setGenres(genreOptions);
+        setActors(actorOptions);
+        setMetadataError("");
+        setForm((current) => ({
+          ...current,
+          genre_ids: detail ? genreOptions.filter((option) => detail.genres?.includes(option.name)).map((option) => option.id) : current.genre_ids,
+          actor_ids: detail ? actorOptions.filter((option) => (detail.actors ?? detail.cast)?.includes(option.name)).map((option) => option.id) : current.actor_ids,
+        }));
+      })
+      .catch((reason: unknown) => {
+        if (active) setMetadataError(reason instanceof Error ? reason.message : "Unable to load genres and cast.");
+      })
+      .finally(() => {
+        if (active) setMetadataLoading(false);
+      });
+    return () => { active = false; };
+  }, [detail]);
 
   const load = useCallback(async () => {
     if (!titleId) return;
@@ -44,8 +72,13 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
         year_released: value.year_released ?? new Date().getFullYear(),
         duration: typeof value.duration === "number" ? value.duration : 0,
         number_of_seasons: value.seasons?.length ?? 1,
+        genre_ids: [],
+        actor_ids: [],
       });
-      setAssetReady(Boolean(value.asset_id));
+      const hasReadyAsset = kind === "movies"
+        ? value.asset_status === "ready"
+        : value.seasons?.some((season) => season.episodes.some((episode) => episode.asset_status === "ready")) ?? false;
+      setAssetReady(hasReadyAsset);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to load this title.");
     } finally {
@@ -56,6 +89,10 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
   useEffect(() => { load(); }, [load]);
 
   const setField = (field: keyof AdminTitleInput, value: string | number) => setForm((current) => ({ ...current, [field]: value }));
+  const toggleMetadata = (field: "genre_ids" | "actor_ids", id: number) => setForm((current) => {
+    const selected = current[field] ?? [];
+    return { ...current, [field]: selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id] };
+  });
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -68,7 +105,8 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
         setEntityId(created.id);
         setResolvedTitleId(created.title_id);
         setSaved("Metadata created. Add artwork and video before publishing.");
-        router.replace(`/admin/${kind}/${created.title_id}?entityId=${created.id}`);
+        const routeId = kind === "movies" ? created.id : created.title_id;
+        router.replace(`/admin/${kind}/${routeId}?entityId=${created.id}`);
       } else if (entityId) {
         await adminApi.updateTitle(kind, entityId, form);
         setSaved("Changes saved.");
@@ -97,30 +135,42 @@ export function AdminTitleEditor({ kind, titleId }: AdminTitleEditorProps) {
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
-        <div><Link href="/admin" className="text-sm text-zinc-400 hover:text-white">← All titles</Link><h1 className="mt-2 text-3xl font-black sm:text-4xl">{resolvedTitleId ? "Edit" : "Create"} {kind === "movies" ? "movie" : "series"}</h1></div>
-        {resolvedTitleId && <button type="button" onClick={togglePublished} disabled={!detail?.published && !assetReady} className="min-h-11 rounded border border-zinc-500 px-5 font-bold hover:border-white disabled:cursor-not-allowed disabled:opacity-40">{detail?.published ? "Unpublish" : "Publish"}</button>}
+        <div className="min-w-0"><Link href="/admin" className="text-sm text-zinc-400 hover:text-white">← All titles</Link><h1 className="mt-2 text-3xl font-black sm:text-4xl">{resolvedTitleId ? "Edit" : "Create"} {kind === "movies" ? "movie" : "series"}</h1></div>
+        {resolvedTitleId && <button type="button" onClick={togglePublished} disabled={!detail?.published && !assetReady} className="min-h-11 w-full whitespace-nowrap rounded border border-zinc-500 px-5 font-bold hover:border-white disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">{detail?.published ? "Unpublish" : "Publish"}</button>}
       </div>
       {resolvedTitleId && !assetReady && !detail?.published && <p className="mb-5 rounded border border-amber-700/50 bg-amber-950/30 p-4 text-sm text-amber-100">Publishing is locked until video processing reaches Ready.</p>}
       {saved && <p className="mb-5 rounded bg-emerald-950/60 p-4 text-emerald-200">{saved}</p>}
       {error && <p className="mb-5 rounded bg-red-950/60 p-4 text-red-200">{error}</p>}
 
-      <form onSubmit={save} className="grid gap-5 rounded-xl border border-zinc-700 bg-zinc-900/60 p-5 sm:grid-cols-2 sm:p-7">
+      <form onSubmit={save} className="grid min-w-0 gap-5 rounded-xl border border-zinc-700 bg-zinc-900/60 p-5 sm:grid-cols-2 sm:p-7">
         <label className="sm:col-span-2">Title<input required value={form.title} onChange={(event) => setField("title", event.target.value)} className="mt-2 w-full rounded border border-zinc-600 bg-black px-4 py-3" /></label>
         <label>Release year<input type="number" min={1888} max={2200} value={form.year_released} onChange={(event) => setField("year_released", Number(event.target.value))} className="mt-2 w-full rounded border border-zinc-600 bg-black px-4 py-3" /></label>
         <label>Director<input value={form.director} onChange={(event) => setField("director", event.target.value)} className="mt-2 w-full rounded border border-zinc-600 bg-black px-4 py-3" /></label>
         {kind === "movies" ? <label>Duration (minutes)<input type="number" min={0} value={form.duration} onChange={(event) => setField("duration", Number(event.target.value))} className="mt-2 w-full rounded border border-zinc-600 bg-black px-4 py-3" /></label> : <label>Initial number of seasons<input type="number" min={0} max={100} value={form.number_of_seasons} onChange={(event) => setField("number_of_seasons", Number(event.target.value))} className="mt-2 w-full rounded border border-zinc-600 bg-black px-4 py-3" /></label>}
         <label className="sm:col-span-2">Description<textarea rows={5} value={form.description} onChange={(event) => setField("description", event.target.value)} className="mt-2 w-full rounded border border-zinc-600 bg-black px-4 py-3" /></label>
-        <button disabled={saving} className="min-h-12 rounded bg-red-600 px-6 font-bold hover:bg-red-700 disabled:opacity-50 sm:col-span-2">{saving ? "Saving…" : resolvedTitleId ? "Save changes" : "Create metadata"}</button>
+        <MetadataChoices legend="Genres" options={genres} selected={form.genre_ids ?? []} loading={metadataLoading} onToggle={(id) => toggleMetadata("genre_ids", id)} />
+        <MetadataChoices legend="Cast" options={actors} selected={form.actor_ids ?? []} loading={metadataLoading} onToggle={(id) => toggleMetadata("actor_ids", id)} />
+        {metadataError && <p role="alert" className="rounded bg-red-950/60 p-4 text-red-200 sm:col-span-2">{metadataError}</p>}
+        <button disabled={saving || metadataLoading || Boolean(metadataError)} className="min-h-12 rounded bg-red-600 px-6 font-bold hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2">{saving ? "Saving…" : metadataLoading ? "Loading metadata…" : resolvedTitleId ? "Save changes" : "Create metadata"}</button>
       </form>
 
       {resolvedTitleId && <div className="mt-7 grid gap-5">
         <UploadPanel endpoint={`/api/v1/admin/titles/${resolvedTitleId}/thumbnail`} label="Poster artwork" accept="image/jpeg,image/png,image/webp" pollAsset={false} onUploaded={load} />
-        {kind === "movies" && entityId && <UploadPanel endpoint={`/api/v1/admin/movies/${entityId}/video`} label="Movie video" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv" initialReadyAssetId={detail?.asset_id} onReady={() => setAssetReady(true)} />}
+        {kind === "movies" && entityId && <UploadPanel endpoint={`/api/v1/admin/movies/${entityId}/video`} label="Movie video" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv" initialAssetId={detail?.asset_id} onReady={() => setAssetReady(true)} />}
       </div>}
 
       {kind === "series" && entityId && resolvedTitleId && <SeriesManager seriesId={entityId} seasons={detail?.seasons ?? []} onReload={load} onAssetReady={() => setAssetReady(true)} />}
     </div>
   );
+}
+
+function MetadataChoices({ legend, options, selected, loading, onToggle }: { legend: string; options: MetadataReference[]; selected: number[]; loading: boolean; onToggle: (id: number) => void }) {
+  return <fieldset className="min-w-0 rounded border border-zinc-700 p-4">
+    <legend className="px-1 font-bold">{legend} <span className="font-normal text-zinc-400">({selected.length} selected)</span></legend>
+    {loading ? <p className="text-sm text-zinc-400">Loading {legend.toLowerCase()}…</p> : options.length === 0 ? <p className="text-sm text-zinc-400">No options are available.</p> : <div className="grid max-h-52 gap-1 overflow-y-auto pr-1">
+      {options.map((option) => <label key={option.id} className="flex min-h-10 cursor-pointer items-center gap-3 rounded px-2 hover:bg-zinc-800"><input type="checkbox" checked={selected.includes(option.id)} onChange={() => onToggle(option.id)} className="h-4 w-4 accent-red-600" /><span className="min-w-0 break-words text-sm">{option.name}</span></label>)}
+    </div>}
+  </fieldset>;
 }
 
 function SeriesManager({ seriesId, seasons, onReload, onAssetReady }: { seriesId: number; seasons: Season[]; onReload: () => Promise<void>; onAssetReady: () => void }) {
@@ -142,13 +192,13 @@ function SeriesManager({ seriesId, seasons, onReload, onAssetReady }: { seriesId
   };
 
   return <section className="mt-8 rounded-xl border border-zinc-700 bg-zinc-900/60 p-5 sm:p-7">
-    <div className="flex flex-wrap items-end justify-between gap-4"><div><h2 className="text-2xl font-black">Seasons and episodes</h2><p className="mt-1 text-sm text-zinc-400">Create episodes, then upload and monitor each episode&apos;s video independently.</p></div><div className="flex gap-2"><input aria-label="Season number" type="number" min={1} value={seasonNumber} onChange={(event) => setSeasonNumber(Number(event.target.value))} className="w-24 rounded border border-zinc-600 bg-black px-3" /><button type="button" onClick={addSeason} className="min-h-11 rounded bg-white px-4 font-bold text-black">Add season</button></div></div>
+    <div className="flex flex-wrap items-end justify-between gap-4"><div className="min-w-0"><h2 className="text-2xl font-black">Seasons and episodes</h2><p className="mt-1 text-sm text-zinc-400">Create episodes, then upload and monitor each episode&apos;s video independently.</p></div><div className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto"><input aria-label="Season number" type="number" min={1} value={seasonNumber} onChange={(event) => setSeasonNumber(Number(event.target.value))} className="min-h-11 min-w-0 rounded border border-zinc-600 bg-black px-3 sm:w-24" /><button type="button" onClick={addSeason} className="min-h-11 whitespace-nowrap rounded bg-white px-4 font-bold text-black">Add season</button></div></div>
     {error && <p className="mt-4 text-red-300">{error}</p>}
     <div className="mt-6 grid gap-6">
       {seasons.map((season, index) => {
         const seasonId = season.season_id ?? season.id;
-        return <article key={seasonId ?? index} className="rounded-lg border border-zinc-700 bg-black/50 p-4"><h3 className="text-xl font-bold">Season {season.season_number ?? season.number ?? index + 1}</h3>
-          <div className="mt-4 grid gap-4">{season.episodes.map((episode, episodeIndex) => <div key={episode.episode_id ?? episode.id ?? episodeIndex} className="rounded border border-zinc-800 p-4"><p className="font-bold">{episode.episode_number ?? episode.episode ?? episodeIndex + 1}. {episode.title}</p>{(episode.episode_id ?? episode.id) && <div className="mt-3"><UploadPanel endpoint={`/api/v1/admin/episodes/${episode.episode_id ?? episode.id}/video`} label="Episode video" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv" initialReadyAssetId={episode.asset_id} onReady={onAssetReady} /></div>}</div>)}</div>
+        return <article key={seasonId ?? index} className="min-w-0 rounded-lg border border-zinc-700 bg-black/50 p-4"><h3 className="text-xl font-bold">Season {season.season_number ?? season.number ?? index + 1}</h3>
+          <div className="mt-4 grid min-w-0 gap-4">{season.episodes.map((episode, episodeIndex) => <div key={episode.episode_id ?? episode.id ?? episodeIndex} className="min-w-0 rounded border border-zinc-800 p-4"><p className="break-words font-bold">{episode.episode_number ?? episode.episode ?? episodeIndex + 1}. {episode.title}</p>{(episode.episode_id ?? episode.id) && <div className="mt-3 min-w-0"><UploadPanel endpoint={`/api/v1/admin/episodes/${episode.episode_id ?? episode.id}/video`} label="Episode video" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv" initialAssetId={episode.asset_id} onReady={onAssetReady} /></div>}</div>)}</div>
           {seasonId && <div className="mt-4 flex flex-col gap-2 sm:flex-row"><input value={episodeTitles[seasonId] ?? ""} onChange={(event) => setEpisodeTitles((current) => ({ ...current, [seasonId]: event.target.value }))} placeholder="New episode title" className="min-h-11 flex-1 rounded border border-zinc-600 bg-black px-4" /><button type="button" onClick={() => addEpisode(season)} className="min-h-11 rounded border border-white px-4 font-bold">Add episode</button></div>}
         </article>;
       })}

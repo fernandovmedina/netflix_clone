@@ -16,9 +16,13 @@ import (
 )
 
 var (
-	errPlanNotFound    = errors.New("plan not found")
-	errDiscountInvalid = errors.New("discount is inactive or outside its validity period")
-	errDiscountSpent   = errors.New("discount redemption limit reached")
+	errPlanNotFound       = errors.New("plan not found")
+	errDiscountNotFound   = errors.New("discount not found")
+	errDiscountInactive   = errors.New("discount is inactive")
+	errDiscountNotStarted = errors.New("discount has not started")
+	errDiscountExpired    = errors.New("discount has expired")
+	errDiscountDefinition = errors.New("discount definition is invalid")
+	errDiscountSpent      = errors.New("discount redemption limit reached")
 )
 
 type planResponse struct {
@@ -93,8 +97,17 @@ func calculateDiscount(subtotal int64, discount discountRow) int64 {
 }
 
 func validateDiscount(discount discountRow, userRedemptions int, now time.Time) error {
-	if !discount.Active || (discount.StartsAt != nil && now.Before(*discount.StartsAt)) || (discount.ExpiresAt != nil && !now.Before(*discount.ExpiresAt)) {
-		return errDiscountInvalid
+	if discount.ValueHundredths < 0 || discount.Kind == "percent" && discount.ValueHundredths > 10000 {
+		return errDiscountDefinition
+	}
+	if !discount.Active {
+		return errDiscountInactive
+	}
+	if discount.StartsAt != nil && now.Before(*discount.StartsAt) {
+		return errDiscountNotStarted
+	}
+	if discount.ExpiresAt != nil && !now.Before(*discount.ExpiresAt) {
+		return errDiscountExpired
 	}
 	if (discount.MaxRedemptions != nil && discount.RedemptionCount >= *discount.MaxRedemptions) || userRedemptions >= discount.PerUserLimit {
 		return errDiscountSpent
@@ -120,6 +133,10 @@ func (app *application) previewDiscount(w http.ResponseWriter, r *http.Request) 
 		PlanID int    `json:"plan_id"`
 	}
 	if !decode(w, r, &in) {
+		return
+	}
+	if !validDatabaseID(in.PlanID) {
+		jsonx.Error(w, http.StatusBadRequest, "valid plan_id is required")
 		return
 	}
 	var subtotalText, currency string
@@ -210,7 +227,7 @@ func (app *application) priceForPayment(ctx context.Context, tx pgx.Tx, user uui
 	}
 	discount, err := scanDiscount(tx.QueryRow(ctx, `select id,kind::text,value::text,max_redemptions,redemption_count,per_user_limit,starts_at,expires_at,active from discounts where code=$1 for update`, strings.TrimSpace(code)))
 	if err == pgx.ErrNoRows {
-		return out, errDiscountInvalid
+		return out, errDiscountNotFound
 	}
 	if err != nil {
 		return out, err
@@ -299,7 +316,7 @@ func paymentError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errPlanNotFound):
 		jsonx.Error(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, errDiscountInvalid):
+	case errors.Is(err, errDiscountNotFound), errors.Is(err, errDiscountInactive), errors.Is(err, errDiscountNotStarted), errors.Is(err, errDiscountExpired), errors.Is(err, errDiscountDefinition):
 		jsonx.Error(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, errDiscountSpent), errors.As(err, &pgErr) && pgErr.Code == "23505":
 		jsonx.Error(w, http.StatusConflict, "discount redemption limit reached")
@@ -325,7 +342,7 @@ func (app *application) oxxoPayment(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if in.PlanID < 1 {
+	if !validDatabaseID(in.PlanID) {
 		jsonx.Error(w, http.StatusBadRequest, "valid plan_id is required")
 		return
 	}

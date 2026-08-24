@@ -75,15 +75,15 @@ func TestSeedVideoEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, quality := range []string{"144p", "240p", "360p", "480p", "720p"} {
+	for _, quality := range []string{"144p", "240p", "360p", "480p", "720p", "1080p"} {
 		if !strings.Contains(string(manifest), quality+"/playlist.m3u8") {
 			t.Errorf("manifest missing %s:\n%s", quality, manifest)
 		}
 	}
-	if strings.Contains(string(manifest), "1080p") || strings.Contains(string(manifest), "mp4a") {
-		t.Fatalf("unexpected upscale/audio codec:\n%s", manifest)
+	if strings.Contains(string(manifest), "1440p") || !strings.Contains(string(manifest), "mp4a.40.2") {
+		t.Fatalf("unexpected ladder or missing audio codec:\n%s", manifest)
 	}
-	segment := filepath.Join(root, "hls", assetID.String(), "720p", "seg_00000.ts")
+	segment := filepath.Join(root, "hls", assetID.String(), "1080p", "seg_00000.ts")
 	f, err := os.Open(segment)
 	if err != nil {
 		t.Fatal(err)

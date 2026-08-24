@@ -95,9 +95,23 @@ export type AdminTitleInput = {
   year_released: number;
   duration?: number;
   number_of_seasons?: number;
+  genre_ids?: number[];
+  actor_ids?: number[];
+  category_ids?: number[];
 };
 
-export type CreatedTitle = { id: number; title_id: number };
+export type CreatedTitle = {
+  id: number;
+  title_id: number;
+  genre_ids?: number[];
+  actor_ids?: number[];
+  category_ids?: number[];
+};
+
+export type MetadataReference = {
+  id: number;
+  name: string;
+};
 
 export type Plan = {
   id: number;
@@ -258,6 +272,8 @@ export const catalogApi = {
   home: () => apiRequest<HomeRow[]>("/api/v1/home"),
   titles: (query = "") =>
     apiRequest<ListResponse>(`/api/v1/titles${query}`).then(unwrapList),
+  genres: () => apiRequest<MetadataReference[]>("/api/v1/genres"),
+  actors: () => apiRequest<MetadataReference[]>("/api/v1/actors"),
   detail: async (item: CatalogItem) => {
     const type = item.content_type.toLowerCase();
     const series = type.includes("series") || type.includes("show");
@@ -351,7 +367,7 @@ export const adminApi = {
   createTitle: (kind: "movies" | "series", input: AdminTitleInput) =>
     apiRequest<CreatedTitle>(`/api/v1/admin/${kind}`, { method: "POST", body: JSON.stringify(input) }),
   updateTitle: (kind: "movies" | "series", id: number, input: AdminTitleInput) =>
-    apiRequest<void>(`/api/v1/admin/${kind}/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+    apiRequest<CreatedTitle>(`/api/v1/admin/${kind}/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   publish: (titleId: number, published: boolean) =>
     apiRequest<{ published: boolean }>(`/api/v1/admin/titles/${titleId}/publish`, { method: "POST", body: JSON.stringify({ published }) }),
   assetStatus: (assetId: string) =>

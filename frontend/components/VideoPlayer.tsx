@@ -66,18 +66,26 @@ export function VideoPlayer({ assetId, title, progressKind, progressId }: VideoP
       if (!active) return;
 
       video.crossOrigin = "use-credentials";
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      // Media Source Extensions first: Chrome reports canPlayType("application/
+      // vnd.apple.mpegurl") as "maybe" but then stalls on the manifest forever,
+      // so the native element is only a fallback for engines without MSE (iOS
+      // Safari), which is also the order hls.js documents.
+      if (!Hls.isSupported()) {
+        if (!video.canPlayType("application/vnd.apple.mpegurl")) {
+          setError("This browser cannot play HLS video.");
+          setLoading(false);
+          return;
+        }
         video.src = source;
         video.addEventListener("loadedmetadata", () => {
           if (resumeAt > 0 && resumeAt < video.duration * 0.95) video.currentTime = resumeAt;
           setLoading(false);
+          video.play().catch(() => undefined);
         }, { once: true });
-        return;
-      }
-
-      if (!Hls.isSupported()) {
-        setError("This browser cannot play HLS video.");
-        setLoading(false);
+        video.addEventListener("error", () => {
+          setError("Playback could not recover. Please try again.");
+          setLoading(false);
+        }, { once: true });
         return;
       }
 
@@ -89,8 +97,10 @@ export function VideoPlayer({ assetId, title, progressKind, progressId }: VideoP
         },
       });
       hlsRef.current = hls;
-      hls.attachMedia(video);
+      // Register before attachMedia: hls.js can emit MEDIA_ATTACHED synchronously,
+      // and a listener added afterwards misses it, leaving the source never loaded.
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(source));
+      hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setQualities(hls.levels.map((level, index) => ({
           index,

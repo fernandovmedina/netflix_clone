@@ -4,10 +4,16 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/fernandovmedina/netflix-clone/microservices/shared/jsonx"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+)
+
+const (
+	maxProfilesPerUser  = 5
+	maxProfileNameRunes = 50
 )
 
 type favorite struct {
@@ -45,7 +51,7 @@ func (app *application) addFavorite(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if in.TitleID < 1 {
+	if !validDatabaseID(in.TitleID) {
 		jsonx.Error(w, http.StatusBadRequest, "valid title_id is required")
 		return
 	}
@@ -129,13 +135,41 @@ func (app *application) createProfile(w http.ResponseWriter, r *http.Request) {
 		jsonx.Error(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	if utf8.RuneCountInString(name) > maxProfileNameRunes {
+		jsonx.Error(w, http.StatusBadRequest, "profile name must be 50 characters or fewer")
+		return
+	}
 	kids := false
 	if in.IsKids != nil {
 		kids = *in.IsKids
 	}
-	item, err := scanProfile(app.pool.QueryRow(r.Context(), `insert into profiles(user_id,name,avatar,is_kids) values($1,$2,$3,$4)
+	tx, err := app.pool.Begin(r.Context())
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	var lockedUser uuid.UUID
+	if err = tx.QueryRow(r.Context(), `select id from users where id=$1 for update`, userID(r)).Scan(&lockedUser); err != nil {
+		serverError(w, err)
+		return
+	}
+	var count int
+	if err = tx.QueryRow(r.Context(), `select count(*) from profiles where user_id=$1`, lockedUser).Scan(&count); err != nil {
+		serverError(w, err)
+		return
+	}
+	if count >= maxProfilesPerUser {
+		jsonx.Error(w, http.StatusConflict, "profile limit reached")
+		return
+	}
+	item, err := scanProfile(tx.QueryRow(r.Context(), `insert into profiles(user_id,name,avatar,is_kids) values($1,$2,$3,$4)
 		returning id,name,avatar,is_kids,created_at`, userID(r), name, cleanOptional(in.Avatar), kids))
 	if err != nil {
+		serverError(w, err)
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
 		serverError(w, err)
 		return
 	}
@@ -170,9 +204,16 @@ func (app *application) patchProfile(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if in.Name != nil && strings.TrimSpace(*in.Name) == "" {
-		jsonx.Error(w, http.StatusBadRequest, "name must not be empty")
-		return
+	if in.Name != nil {
+		name := strings.TrimSpace(*in.Name)
+		if name == "" {
+			jsonx.Error(w, http.StatusBadRequest, "name must not be empty")
+			return
+		}
+		if utf8.RuneCountInString(name) > maxProfileNameRunes {
+			jsonx.Error(w, http.StatusBadRequest, "profile name must be 50 characters or fewer")
+			return
+		}
 	}
 	item, err := scanProfile(app.pool.QueryRow(r.Context(), `update profiles set
 		name=case when $3::boolean then $4 else name end,

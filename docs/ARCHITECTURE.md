@@ -32,7 +32,7 @@ Status legend: `TODO` not started · `WIP` in progress · `DONE` implemented + v
                             │
                             ▼
               nginx load balancer  :8080          microservices/nginx/nginx.conf
-                            │  least_conn, logs $upstream_addr
+                            │  Docker DNS round-robin, logs $upstream_addr
                             ▼
                    auth ×3   (:8080)              microservices/auth
                    │  the single entry point:
@@ -54,6 +54,48 @@ Status legend: `TODO` not started · `WIP` in progress · `DONE` implemented + v
 ```
 
 Container count: 1 nginx + 3 auth + 2 catalog + 2 streaming + 2 user + 2 worker + 1 postgres + 1 frontend = **14**.
+
+Each tier is one Compose service with `deploy.replicas`; Docker DNS exposes its
+active replica addresses and nginx re-resolves them every second. Compose
+health conditions gate nginx's initial startup on the HTTP tiers. Scale a tier
+without editing or restarting nginx, for example:
+
+```sh
+docker compose up -d --scale auth=5
+docker compose up -d --scale auth=3
+```
+
+Compose waits for healthy HTTP replicas before starting nginx, so nginx cold
+start is not the source of the previously observed DNS miss. Repeated requests
+against a healthy steady-state stack and immediately after an nginx restart did
+not reproduce it. A forced container remove/recreate did: Docker Desktop can
+briefly return NXDOMAIN for several Compose service aliases while network
+membership changes, even though the other replicas remain healthy. A trial of
+nginx 1.27 shared upstream zones with dynamic `resolve` made that edge worse by
+emptying the peer groups on NXDOMAIN, so the proven variable `proxy_pass`
+configuration remains in place. A normal `docker restart` does not detach the
+container from its network; the one-second resolver validity and timeout bound
+any Docker DNS pause while the process comes back. Scale/recreate operations can
+still expose a transient 502 if a request lands inside Docker Desktop's DNS
+control-plane window; it is not stale-IP misrouting and recovery is automatic
+on the next resolver refresh. Eliminating that Docker Desktop edge completely
+would require a stale-answer DNS cache or service discovery outside nginx, which
+is not justified for this local-only stack.
+
+The frontend publishes port 3000 by default. If that host port is occupied by a
+development server, run the production container on another port without
+changing the Compose file:
+
+```sh
+FRONTEND_PORT=3001 docker compose up -d --build frontend
+```
+
+The local nginx CORS allowlist includes both `http://localhost:3000` and the
+documented alternate `http://localhost:3001`, so authenticated browser requests
+still target the baked `http://localhost:8080` API URL in either mode.
+
+Replica hostnames are container IDs, so per-request service logs still identify
+the individual container that handled each request.
 
 ### Service ownership
 
@@ -241,10 +283,47 @@ profiles (id uuid pk, user_id uuid references users(id) on delete cascade,
 - `watch_progress.user_id` / `favorites.user_id` now carry a real FK to `users(id)`.
 - `watch_progress` gains `unique (user_id, id_movie)` and `unique (user_id, id_episode)` so upserts are atomic across instances.
 - Add the indexes the catalog actually reads by: `titles(type) where deleted_at is null`, `title_genres(id_genre)`, `episodes(id_season, episode_number)`.
+- `user_rate_limits(user_id, action, window_start, request_count)` is the shared per-user counter for discount-preview and OXXO-simulation limits. Its composite primary key makes increments atomic across all user-service replicas.
 
 ---
 
-## 5. Video pipeline
+## 5. Deterministic catalog seed and reset
+
+The Go importer remains the source of the live seeded catalog. Compose runs it
+in content-aware reset mode. If the catalog shape, seed-title inventory, or
+stored source fingerprint differs, this single command removes and rebuilds
+only catalog data, `video_assets`, `video_jobs`, and the exact `/media/hls` and
+`/media/sources` trees, then queues the current `seed/video/video.mp4` for every
+seeded movie and episode. When catalog and video are already current, it uses
+the normal idempotent importer and preserves ready media, so restarting a
+dependent worker cannot accidentally trigger another transcode:
+
+```sh
+docker compose up --build seed
+```
+
+The reset snapshots favorites and watch progress by stable movie or episode
+identity and restores entries that still exist in the seed. Fixture-only
+library entries naturally disappear. It does not delete or update users,
+sessions, profiles, payments, subscriptions, discounts, discount redemptions,
+or plans. Stop running workers before an operator-initiated reset and start
+them afterward; normal full-stack startup already orders workers after seed.
+
+`database/exec.sql` is the media-free, human-runnable equivalent for catalog
+metadata. Regenerate and execute it with:
+
+```sh
+cd database/seed && go run . -generate-sql ../exec.sql
+cd ../.. && docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U netflix -d netflix < database/exec.sql
+```
+
+The generated SQL is idempotent and contains titles, movies, series, seasons,
+episodes, vocabulary rows, and all title metadata joins. Media assets and jobs
+remain exclusively owned by the importer/pipeline.
+
+---
+
+## 6. Video pipeline
 
 ### Upload → ready
 
@@ -295,7 +374,7 @@ Rules:
 - A 480p source produces 144/240/360/480 only. A 1080p source stops at 1080p. 1440p only when the source is ≥1440.
 - If the source is smaller than 144p, emit a single rendition at the source height (still even-rounded).
 - **Keyframes must align across renditions** or ABR switching breaks: `-g $(2*fps) -keyint_min $(2*fps) -sc_threshold 0 -force_key_frames "expr:gte(t,n_forced*6)"`.
-- Codecs: `libx264` (`-profile:v main`, `-preset veryfast`) + `aac`. Nothing exotic.
+- Codecs: `libx264` (`-profile:v main`, `-preset veryfast`) + `aac`. Audio-bearing sources explicitly map `0:a:0`, apply each profile's `-b:a`, and advertise `mp4a.40.2` in the master playlist. Silent sources use `-an`. Nothing exotic.
 - Segments: `-hls_time 6 -hls_playlist_type vod -hls_segment_type mpegts`.
 
 ### Output layout on the shared volume
@@ -328,7 +407,7 @@ GET /api/v1/stream/:asset_id/:quality/:segment.ts
 
 ---
 
-## 6. API contract
+## 7. API contract
 
 All routes are behind nginx at `http://localhost:8080`. Every route below `/api/v1/auth/*` requires a valid access token.
 
@@ -354,6 +433,11 @@ GET    /api/v1/home                                        -> the browse rows th
 
 POST   /api/v1/admin/movies            PATCH/DELETE /api/v1/admin/movies/:id
 POST   /api/v1/admin/series            PATCH/DELETE /api/v1/admin/series/:id
+       create/PATCH body metadata: {genre_ids: int[], actor_ids: int[], category_ids: int[]}
+       create -> 201, PATCH -> 200: {id,title_id,genre_ids,actor_ids,category_ids}
+POST/PATCH/DELETE /api/v1/admin/genres[/:id]      body: {name}
+POST/PATCH/DELETE /api/v1/admin/actors[/:id]      body: {name}
+POST/PATCH/DELETE /api/v1/admin/categories[/:id]  body: {name}
 POST   /api/v1/admin/series/:id/seasons
 POST   /api/v1/admin/seasons/:id/episodes
 POST   /api/v1/admin/movies/:id/video      (multipart) -> 202 {asset_id}
@@ -362,6 +446,13 @@ POST   /api/v1/admin/titles/:id/thumbnail  (multipart)
 GET    /api/v1/admin/assets/:id            -> {status, qualities, error, progress}
 POST   /api/v1/admin/titles/:id/publish    {published: bool}
 ```
+
+Metadata arrays use replacement semantics when present (including an explicit
+empty array). An omitted array is preserved on PATCH. Movie and series creates
+default `category_ids` to the `Movies` or `Series` category when it is omitted.
+Duplicate IDs are normalized; a missing, deleted, zero, or negative reference
+returns `400 {"error":"one or more metadata IDs do not exist"}` and rolls back
+the entire title mutation.
 
 ### user
 ```
@@ -379,9 +470,14 @@ GET    /api/v1/payments/:id
 
 **Pricing rule:** the request carries `plan_id` and optionally `code`. It never carries a price, subtotal, discount or total — those are looked up and computed server-side and any client-sent value is ignored. `/discounts/validate` exists only so the UI can show a preview; the real numbers are recomputed at payment time inside the same transaction that increments `redemption_count`.
 
+The user service additionally limits discount validation to 20 requests per
+user per minute and OXXO payment simulation to 5 requests per user per minute.
+Counters are in PostgreSQL, so limits are consistent across replicas. A denied
+request returns `429 {"error":"rate limit exceeded"}` with `Retry-After`.
+
 ---
 
-## 7. Frontend
+## 8. Frontend
 
 - Delete `utils/supabase/*` and both `@supabase/*` dependencies.
 - `utils/api/client.ts` — a single fetch wrapper: `credentials: "include"`, JSON, and on a 401 it calls `/auth/refresh` once and retries the original request (guard against a refresh loop).
@@ -394,7 +490,7 @@ GET    /api/v1/payments/:id
 
 ---
 
-## 8. Environment variables
+## 9. Environment variables
 
 Single root `.env` (git-ignored) consumed by compose; `.env.example` **is** committed with placeholder values.
 
@@ -418,34 +514,34 @@ Never expose a secret to the browser. Only `NEXT_PUBLIC_*` is allowed to reach t
 
 ---
 
-## 9. Definition of done per milestone
+## 10. Definition of done per milestone
 
 | M | Milestone | Owner | Status |
 |---|---|---|---|
-| M1 | Postgres + migrations + seed importer | Codex 1 | TODO |
-| M2 | Auth rewrite: signup/login/logout/refresh/RBAC, Supabase gone | Codex 1 | TODO |
-| M3 | Google OAuth end to end | Codex 1 | TODO |
-| M4 | Docker: root compose, all Dockerfiles, nginx, volumes, healthchecks | Codex 3 | TODO |
-| M5 | catalog service + admin CRUD + upload intake | Codex 1 | TODO |
-| M6 | worker: ffprobe, ladder, ffmpeg, HLS, SKIP LOCKED queue | Codex 1 | TODO |
-| M7 | streaming service: manifests, segments, ranges, cache headers | Codex 1 | TODO |
-| M8 | user service: progress, favorites, profiles | Codex 1 | TODO |
-| M9 | payments: plans, discounts, card, OXXO simulation | Codex 1 | TODO |
-| M10 | frontend de-Supabase: API client, auth pages, middleware, AuthProvider | Codex 3 | TODO |
-| M11 | frontend catalog wired to real API, artwork served locally | Codex 3 | TODO |
-| M12 | hls.js player: ABR, seek, quality menu, error recovery | Codex 3 | TODO |
-| M13 | admin UI: CRUD, upload progress, status pills | Codex 3 | TODO |
-| M14 | payments UI wired to backend totals | Codex 3 | TODO |
-| M15 | responsive pass at 375/768/1024/1440 | Codex 3 | TODO |
-| M16 | automated tests (Go unit + integration) | Codex 1 + 3 | TODO |
-| M17 | security + QA review loop | Codex 2 | TODO |
-| M18 | horizontal-scaling verification | lead | TODO |
-| M19 | Chrome MCP manual verification | lead | TODO |
-| M20 | CLAUDE.md rewritten to match reality | lead | TODO |
+| M1 | Postgres + migrations + seed importer | Codex 1 | DONE — SQL in `database/migrations`, runner in `shared/migrate`, importer in `database/seed` |
+| M2 | Auth rewrite: signup/login/logout/refresh/RBAC, Supabase gone | Codex 1 | DONE — bcrypt(12), JWT access + rotating refresh with reuse detection, RBAC; Supabase removed |
+| M3 | Google OAuth end to end | Codex 1 | DONE (backend) — PKCE S256, single-use state. Google consent screen is unverified; publishing it is the owner's step |
+| M4 | Docker: root compose, all Dockerfiles, nginx, volumes, healthchecks | Codex 3 | DONE — replica-based compose, Docker-DNS resolver in nginx, healthchecks, `FRONTEND_PORT` |
+| M5 | catalog service + admin CRUD + upload intake | Codex 1 | DONE — public reads + 20 admin routes + upload intake (202, non-blocking) |
+| M6 | worker: ffprobe, ladder, ffmpeg, HLS, SKIP LOCKED queue | Codex 1 | DONE — ffprobe, no-upscale ladder, aligned keyframes, `SKIP LOCKED` + lease fencing |
+| M7 | streaming service: manifests, segments, ranges, cache headers | Codex 1 | DONE — manifests, segments, ranges, immutable caching, symlink containment, published+ready gating |
+| M8 | user service: progress, favorites, profiles | Codex 1 | DONE — progress, favorites, profiles (capped at 5, names 1–50) |
+| M9 | payments: plans, discounts, card, OXXO simulation | Codex 1 | DONE — plans, backend-only totals, discounts with race-safe redemption, card + OXXO simulation |
+| M10 | frontend de-Supabase: API client, auth pages, middleware, AuthProvider | Codex 3 | DONE — cookie API client with single-flight refresh, auth pages, AuthProvider; middleware validates via `/auth/me` and fails closed |
+| M11 | frontend catalog wired to real API, artwork served locally | Codex 3 | DONE — catalog wired to the real API, artwork served from the media volume |
+| M12 | hls.js player: ABR, seek, quality menu, error recovery | Codex 3 | DONE — hls.js ABR, seek, quality menu, bounded error recovery |
+| M13 | admin UI: CRUD, upload progress, status pills | Codex 3 | IN PROGRESS — CRUD, upload progress and status pills done; admin entry point and genre/cast editing outstanding (Codex 3 Phase 7) |
+| M14 | payments UI wired to backend totals | Codex 3 | DONE — plans and totals from the backend; the client never sends money |
+| M15 | responsive pass at 375/768/1024/1440 | Codex 3 | DONE — 375/768/1024/1440 verified on public, authenticated and admin pages; no horizontal overflow |
+| M16 | automated tests (Go unit + integration) | Codex 1 + 3 | DONE — unit tests race-clean in every module; tagged integration suite green twice and under `-shuffle=on` |
+| M17 | security + QA review loop | Codex 2 | DONE (round 3) — no critical/high; 6 medium + 1 low, all fixed. Docs audit performed separately |
+| M18 | horizontal-scaling verification | lead | DONE — replica replacement under a new IP, per-tier recreation, scale 3→5→3 with nginx untouched |
+| M19 | Chrome MCP manual verification | lead | DONE — login, browse, playback, seek, quality menu and responsive widths verified in Chrome; admin walkthrough with Codex 3 |
+| M20 | CLAUDE.md rewritten to match reality | lead | DONE — root and frontend `CLAUDE.md` rewritten and fact-checked against the code by Codex 2 |
 
 ---
 
-## 10. Hard rules
+## 11. Hard rules
 
 1. Never load a video into memory. `io.Copy` and `http.ServeContent`, always.
 2. Never trust a price, total or discount from the client.

@@ -1,3 +1,3 @@
 #!/bin/bash
 
-tmux send-keys -t %3 "$*" Enter
+tmux send-keys -t %8 "$*" Enter

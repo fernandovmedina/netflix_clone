@@ -100,7 +100,7 @@ func (app *application) cardPayment(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if in.PlanID < 1 {
+	if !validDatabaseID(in.PlanID) {
 		jsonx.Error(w, http.StatusBadRequest, "valid plan_id is required")
 		return
 	}

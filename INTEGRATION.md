@@ -518,7 +518,7 @@ Never expose secrets from `.env.local` to the frontend.
 
 * Inspect and understand the existing architecture before rewriting components.
 * Access Chrome via MCP to verify user-facing changes before committing them.
-* Make Git commits for every important logical milestone.
+* Make Git commits for every important logical milestone, important to use the skill for commiting "/commit -td -Ap -Cn -E" **IMPORTANT**.
 * Use descriptive commit messages such as `feat:`, `fix:`, `refactor:`, `test:`, `chore:`, etc.
 * Make the entire website responsive.
 * Update `CLAUDE.md` to accurately document the new architecture and workflows.

@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	shareddb "github.com/fernandovmedina/netflix-clone/microservices/shared/database"
@@ -50,6 +53,24 @@ type episode struct {
 }
 
 func main() {
+	generateSQL := flag.String("generate-sql", "", "write standalone catalog seed SQL and exit")
+	resetCatalog := flag.Bool("reset-catalog", false, "replace catalog data and catalog media before importing")
+	flag.Parse()
+	seedRoot := os.Getenv("SEED_ROOT")
+	if seedRoot == "" {
+		seedRoot = "seed"
+		info, err := os.Stat(seedRoot)
+		if err != nil || !info.IsDir() {
+			seedRoot = filepath.Join("..", "..", "seed")
+		}
+	}
+	if *generateSQL != "" {
+		if err := generateSeedSQL(seedRoot, *generateSQL); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("generated %s", *generateSQL)
+		return
+	}
 	ctx := context.Background()
 	pool, err := shareddb.Open(ctx)
 	if err != nil {
@@ -64,25 +85,163 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	seedRoot := os.Getenv("SEED_ROOT")
-	if seedRoot == "" {
-		seedRoot = "seed"
+	if *resetCatalog {
+		current, checkErr := catalogIsCurrent(ctx, pool, seedRoot, mediaRoot)
+		if checkErr != nil {
+			log.Fatal(checkErr)
+		}
+		if current {
+			if err := importAll(ctx, pool, store, seedRoot); err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("catalog and seed video already current; destructive reset skipped")
+			return
+		}
+		counts, err := resetAndImport(ctx, pool, store, seedRoot, mediaRoot)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("catalog reset removed: %s", counts)
+		return
 	}
 	if err := importAll(ctx, pool, store, seedRoot); err != nil {
 		log.Fatal(err)
 	}
 }
 
+func resetAndImport(ctx context.Context, pool dbPool, store storage.Store, root, mediaRoot string) (string, error) {
+	movies, seriesData, err := manifests(root)
+	if err != nil {
+		return "", err
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, "select pg_advisory_xact_lock($1)", int64(0x4e465853454544)); err != nil {
+		return "", err
+	}
+	// Preserve user library state when it points to stable seeded identities.
+	statements := []string{
+		`create temporary table seed_saved_favorites on commit drop as select f.user_id,t.type,t.title from favorites f join titles t on t.id_title=f.id_title`,
+		`create temporary table seed_saved_movie_progress on commit drop as select wp.user_id,t.title,wp.current_time_seconds from watch_progress wp join movies m on m.id_movie=wp.id_movie join titles t on t.id_title=m.id_title where wp.id_movie is not null`,
+		`create temporary table seed_saved_episode_progress on commit drop as select wp.user_id,t.title series_title,s.season_number,e.episode_number,wp.current_time_seconds from watch_progress wp join episodes e on e.id_episode=wp.id_episode join seasons s on s.id_season=e.id_season join series sr on sr.id_series=s.id_series join titles t on t.id_title=sr.id_title where wp.id_episode is not null`,
+	}
+	for _, statement := range statements {
+		if _, err = tx.Exec(ctx, statement); err != nil {
+			return "", err
+		}
+	}
+	tables := []string{"video_jobs", "video_assets", "watch_progress", "favorites", "title_actors", "title_categories", "title_genres", "episodes", "seasons", "movies", "series", "titles", "actors", "categories", "genres"}
+	removed := make([]string, 0, len(tables))
+	for _, table := range tables {
+		tag, execErr := tx.Exec(ctx, "delete from "+table)
+		if execErr != nil {
+			return "", execErr
+		}
+		removed = append(removed, fmt.Sprintf("%s=%d", table, tag.RowsAffected()))
+	}
+	for _, tree := range []string{"hls", "sources"} {
+		target := filepath.Join(mediaRoot, tree)
+		if filepath.Dir(target) != filepath.Clean(mediaRoot) {
+			return "", fmt.Errorf("refusing unsafe media reset target %q", target)
+		}
+		if err = os.RemoveAll(target); err != nil {
+			return "", err
+		}
+	}
+	if err = importData(ctx, tx, store, root, movies, seriesData); err != nil {
+		return "", err
+	}
+	restore := []string{
+		`insert into favorites(user_id,id_title) select f.user_id,t.id_title from seed_saved_favorites f join titles t on t.type=f.type and lower(t.title)=lower(f.title) on conflict do nothing`,
+		`insert into watch_progress(user_id,id_movie,current_time_seconds) select p.user_id,m.id_movie,p.current_time_seconds from seed_saved_movie_progress p join titles t on t.type='Movie' and lower(t.title)=lower(p.title) join movies m on m.id_title=t.id_title on conflict(user_id,id_movie) where id_movie is not null do update set current_time_seconds=excluded.current_time_seconds,updated_at=now()`,
+		`insert into watch_progress(user_id,id_episode,current_time_seconds) select p.user_id,e.id_episode,p.current_time_seconds from seed_saved_episode_progress p join titles t on t.type='TV Show' and lower(t.title)=lower(p.series_title) join series sr on sr.id_title=t.id_title join seasons s on s.id_series=sr.id_series and s.season_number=p.season_number join episodes e on e.id_season=s.id_season and e.episode_number=p.episode_number on conflict(user_id,id_episode) where id_episode is not null do update set current_time_seconds=excluded.current_time_seconds,updated_at=now()`,
+	}
+	for _, statement := range restore {
+		if _, err = tx.Exec(ctx, statement); err != nil {
+			return "", err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	return strings.Join(removed, ", "), nil
+}
+
 type dbPool interface {
 	Begin(context.Context) (pgx.Tx, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func catalogIsCurrent(ctx context.Context, pool dbPool, root, mediaRoot string) (bool, error) {
+	movies, seriesData, err := manifests(root)
+	if err != nil {
+		return false, err
+	}
+	expectedSeasons, expectedEpisodes := 0, 0
+	movieNames := make([]string, 0, len(movies.Movies))
+	seriesNames := make([]string, 0, len(seriesData.Series))
+	for _, item := range movies.Movies {
+		movieNames = append(movieNames, item.Name)
+	}
+	for _, item := range seriesData.Series {
+		seriesNames = append(seriesNames, item.Name)
+		for _, season := range item.Seasons {
+			expectedSeasons++
+			expectedEpisodes += len(season.Episodes)
+		}
+	}
+	expectedAssets := len(movies.Movies) + expectedEpisodes
+	var titles, matchingMovies, matchingSeries, movieCount, seriesCount, seasonCount, episodeCount, assetCount, jobCount int
+	err = pool.QueryRow(ctx, `select
+		(select count(*) from titles),
+		(select count(*) from titles where type='Movie' and title=any($1)),
+		(select count(*) from titles where type='TV Show' and title=any($2)),
+		(select count(*) from movies),(select count(*) from series),(select count(*) from seasons),(select count(*) from episodes),
+		(select count(*) from video_assets where status<>'superseded'),(select count(*) from video_jobs)`, movieNames, seriesNames).Scan(&titles, &matchingMovies, &matchingSeries, &movieCount, &seriesCount, &seasonCount, &episodeCount, &assetCount, &jobCount)
+	if err != nil {
+		return false, err
+	}
+	if titles != len(movieNames)+len(seriesNames) || matchingMovies != len(movieNames) || matchingSeries != len(seriesNames) || movieCount != len(movieNames) || seriesCount != len(seriesNames) || seasonCount != expectedSeasons || episodeCount != expectedEpisodes || assetCount != expectedAssets || jobCount != expectedAssets {
+		return false, nil
+	}
+	var sourcePath string
+	if err = pool.QueryRow(ctx, `select source_path from video_assets where status<>'superseded' and source_path is not null order by id limit 1`).Scan(&sourcePath); err != nil {
+		if err == pgx.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	seedHash, err := fileSHA256(filepath.Join(root, "video", "video.mp4"))
+	if err != nil {
+		return false, err
+	}
+	storedHash, err := fileSHA256(filepath.Join(mediaRoot, filepath.FromSlash(sourcePath)))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil && seedHash == storedHash, err
+}
+
+func fileSHA256(path string) ([sha256.Size]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err = io.Copy(hash, file); err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	var result [sha256.Size]byte
+	copy(result[:], hash.Sum(nil))
+	return result, nil
 }
 
 func importAll(ctx context.Context, pool dbPool, store storage.Store, root string) error {
-	movies, err := readManifest(filepath.Join(root, "movies", "seed.json"))
-	if err != nil {
-		return err
-	}
-	seriesData, err := readManifest(filepath.Join(root, "series", "seed.json"))
+	movies, seriesData, err := manifests(root)
 	if err != nil {
 		return err
 	}
@@ -94,6 +253,22 @@ func importAll(ctx context.Context, pool dbPool, store storage.Store, root strin
 	if _, err := tx.Exec(ctx, "select pg_advisory_xact_lock($1)", int64(0x4e465853454544)); err != nil {
 		return err
 	}
+	if err = importData(ctx, tx, store, root, movies, seriesData); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func manifests(root string) (manifest, manifest, error) {
+	movies, err := readManifest(filepath.Join(root, "movies", "seed.json"))
+	if err != nil {
+		return manifest{}, manifest{}, err
+	}
+	seriesData, err := readManifest(filepath.Join(root, "series", "seed.json"))
+	return movies, seriesData, err
+}
+
+func importData(ctx context.Context, tx pgx.Tx, store storage.Store, root string, movies, seriesData manifest) error {
 	for _, item := range movies.Movies {
 		if err := importMovie(ctx, tx, store, root, item); err != nil {
 			return fmt.Errorf("movie %q: %w", item.Name, err)
@@ -104,8 +279,70 @@ func importAll(ctx context.Context, pool dbPool, store storage.Store, root strin
 			return fmt.Errorf("series %q: %w", item.Name, err)
 		}
 	}
-	return tx.Commit(ctx)
+	return nil
 }
+
+func generateSeedSQL(root, destination string) error {
+	movieData, err := readManifest(filepath.Join(root, "movies", "seed.json"))
+	if err != nil {
+		return err
+	}
+	seriesData, err := readManifest(filepath.Join(root, "series", "seed.json"))
+	if err != nil {
+		return err
+	}
+	var b strings.Builder
+	b.WriteString("-- Generated by: cd database/seed && go run . -generate-sql ../exec.sql\n")
+	b.WriteString("-- Execute from the repository root: docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U netflix -d netflix < database/exec.sql\n")
+	b.WriteString("-- Generated from seed/movies/seed.json and seed/series/seed.json. Do not edit by hand.\n\nBEGIN;\n")
+	fmt.Fprintf(&b, "SELECT pg_advisory_xact_lock(%d);\n", int64(0x4e465853454544))
+	for _, item := range movieData.Movies {
+		writeSQLTitle(&b, item.baseTitle, "Movie")
+		fmt.Fprintf(&b, "INSERT INTO movies(id_title,duration) SELECT id_title,%d FROM titles WHERE type='Movie' AND lower(title)=lower(%s) ORDER BY id_title LIMIT 1 ON CONFLICT(id_title) DO UPDATE SET duration=excluded.duration,deleted_at=NULL,updated_at=now();\n", item.Duration, sqlLiteral(item.Name))
+	}
+	for _, item := range seriesData.Series {
+		writeSQLTitle(&b, item.baseTitle, "TV Show")
+		fmt.Fprintf(&b, "INSERT INTO series(id_title,number_of_seasons) SELECT id_title,%d FROM titles WHERE type='TV Show' AND lower(title)=lower(%s) ORDER BY id_title LIMIT 1 ON CONFLICT(id_title) DO UPDATE SET number_of_seasons=excluded.number_of_seasons,deleted_at=NULL,updated_at=now();\n", item.NumberOfSeasons, sqlLiteral(item.Name))
+		for _, season := range item.Seasons {
+			fmt.Fprintf(&b, "INSERT INTO seasons(id_series,season_number,number_of_episodes) SELECT s.id_series,%d,%d FROM series s JOIN titles t ON t.id_title=s.id_title WHERE t.type='TV Show' AND lower(t.title)=lower(%s) ORDER BY s.id_series LIMIT 1 ON CONFLICT(id_series,season_number) DO UPDATE SET number_of_episodes=excluded.number_of_episodes,deleted_at=NULL,updated_at=now();\n", season.Number, season.NumberOfEpisodes, sqlLiteral(item.Name))
+			for _, ep := range season.Episodes {
+				fmt.Fprintf(&b, "INSERT INTO episodes(id_season,episode_number,title,description,duration) SELECT se.id_season,%d,%s,%s,%d FROM seasons se JOIN series s ON s.id_series=se.id_series JOIN titles t ON t.id_title=s.id_title WHERE t.type='TV Show' AND lower(t.title)=lower(%s) AND se.season_number=%d ORDER BY se.id_season LIMIT 1 ON CONFLICT(id_season,episode_number) DO UPDATE SET title=excluded.title,description=excluded.description,duration=excluded.duration,deleted_at=NULL,updated_at=now();\n", ep.Number, sqlLiteral(ep.Title), sqlLiteral(ep.Description), ep.Duration, sqlLiteral(item.Name), season.Number)
+			}
+		}
+	}
+	b.WriteString("COMMIT;\n")
+	return os.WriteFile(destination, []byte(b.String()), 0o644)
+}
+
+func writeSQLTitle(b *strings.Builder, item baseTitle, kind string) {
+	director := "NULL"
+	if strings.TrimSpace(item.Director) != "" {
+		director = sqlLiteral(item.Director)
+	}
+	prefix := "movie"
+	if kind == "TV Show" {
+		prefix = "series"
+	}
+	thumbnail := "/api/v1/stream/thumbnails/" + prefix + "_" + slug(item.Name) + "_" + filepath.Base(item.Thumbnail)
+	fmt.Fprintf(b, "INSERT INTO titles(type,title,description,director,year_released,thumbnail_url,published) SELECT %s,%s,%s,%s,%d,%s,true WHERE NOT EXISTS (SELECT 1 FROM titles WHERE type=%s AND lower(title)=lower(%s));\n", sqlLiteral(kind), sqlLiteral(item.Name), sqlLiteral(item.Description), director, item.Year, sqlLiteral(thumbnail), sqlLiteral(kind), sqlLiteral(item.Name))
+	fmt.Fprintf(b, "UPDATE titles SET description=%s,director=%s,year_released=%d,thumbnail_url=%s,published=true,deleted_at=NULL,updated_at=now() WHERE id_title=(SELECT id_title FROM titles WHERE type=%s AND lower(title)=lower(%s) ORDER BY id_title LIMIT 1);\n", sqlLiteral(item.Description), director, item.Year, sqlLiteral(thumbnail), sqlLiteral(kind), sqlLiteral(item.Name))
+	for _, join := range []string{"title_genres", "title_actors", "title_categories"} {
+		fmt.Fprintf(b, "DELETE FROM %s WHERE id_title=(SELECT id_title FROM titles WHERE type=%s AND lower(title)=lower(%s) ORDER BY id_title LIMIT 1);\n", join, sqlLiteral(kind), sqlLiteral(item.Name))
+	}
+	for _, pair := range []struct {
+		table, id, join string
+		names           []string
+	}{{"genres", "id_genre", "title_genres", item.Genres}, {"actors", "id_actor", "title_actors", item.Cast}, {"categories", "id_category", "title_categories", []string{map[string]string{"Movie": "Movies", "TV Show": "Series"}[kind]}}} {
+		names := append([]string(nil), pair.names...)
+		sort.Strings(names)
+		for _, name := range names {
+			fmt.Fprintf(b, "INSERT INTO %s(name) VALUES(%s) ON CONFLICT(name) DO UPDATE SET deleted_at=NULL,updated_at=now();\n", pair.table, sqlLiteral(name))
+			fmt.Fprintf(b, "INSERT INTO %s(id_title,%s) SELECT t.id_title,v.%s FROM titles t JOIN %s v ON v.name=%s WHERE t.type=%s AND lower(t.title)=lower(%s) ON CONFLICT DO NOTHING;\n", pair.join, pair.id, pair.id, pair.table, sqlLiteral(name), sqlLiteral(kind), sqlLiteral(item.Name))
+		}
+	}
+}
+
+func sqlLiteral(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
 
 func readManifest(path string) (manifest, error) {
 	f, err := os.Open(path)
@@ -228,6 +465,7 @@ func ensureAsset(ctx context.Context, tx pgx.Tx, store storage.Store, root, kind
 		column = "id_episode"
 	}
 	var assetID string
+	created := false
 	err := tx.QueryRow(ctx, fmt.Sprintf(`select id::text from video_assets where %s=$1`, column), targetID).Scan(&assetID)
 	if err != pgx.ErrNoRows {
 		if err != nil {
@@ -238,6 +476,10 @@ func ensureAsset(ctx context.Context, tx pgx.Tx, store storage.Store, root, kind
 		if err != nil {
 			return err
 		}
+		created = true
+	}
+	if !created {
+		return nil
 	}
 	sourceKey := filepath.ToSlash(filepath.Join("sources", assetID, "source.mp4"))
 	f, err := os.Open(filepath.Join(root, "video", "video.mp4"))

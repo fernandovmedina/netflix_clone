@@ -23,7 +23,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <Link href="/admin"><Image src="/netflix_logo.svg" alt="Netflix" width={108} height={30} priority /></Link>
         <span className="rounded bg-red-600 px-2 py-1 text-xs font-black uppercase tracking-wider">Admin</span>
         <Link href="/admin" className="ml-auto text-sm text-zinc-300 hover:text-white">Titles</Link>
-        <Link href="/home" className="text-sm text-zinc-300 hover:text-white">Browse</Link>
+        <Link href="/home" className="text-sm text-zinc-300 hover:text-white">← Back to browse</Link>
         <button type="button" onClick={async () => { await logout(); router.replace("/login"); }} className="text-sm text-zinc-300 hover:text-white">Log out</button>
       </nav>
     </header>

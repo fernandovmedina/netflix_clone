@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -55,20 +56,113 @@ func TestDiscountValidityRules(t *testing.T) {
 	now := time.Now()
 	past, future := now.Add(-time.Hour), now.Add(time.Hour)
 	one := 1
-	for name, discount := range map[string]discountRow{
-		"inactive":       {Active: false, PerUserLimit: 1},
-		"not started":    {Active: true, StartsAt: &future, PerUserLimit: 1},
-		"expired":        {Active: true, ExpiresAt: &past, PerUserLimit: 1},
-		"globally spent": {Active: true, MaxRedemptions: &one, RedemptionCount: 1, PerUserLimit: 1},
+	for name, test := range map[string]struct {
+		discount discountRow
+		want     error
+	}{
+		"inactive":         {discount: discountRow{Active: false, PerUserLimit: 1}, want: errDiscountInactive},
+		"not started":      {discount: discountRow{Active: true, StartsAt: &future, PerUserLimit: 1}, want: errDiscountNotStarted},
+		"expired":          {discount: discountRow{Active: true, ExpiresAt: &past, PerUserLimit: 1}, want: errDiscountExpired},
+		"globally spent":   {discount: discountRow{Active: true, MaxRedemptions: &one, RedemptionCount: 1, PerUserLimit: 1}, want: errDiscountSpent},
+		"negative value":   {discount: discountRow{Active: true, Kind: "fixed", ValueHundredths: -1, PerUserLimit: 1}, want: errDiscountDefinition},
+		"over 100 percent": {discount: discountRow{Active: true, Kind: "percent", ValueHundredths: 10001, PerUserLimit: 1}, want: errDiscountDefinition},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := validateDiscount(discount, 0, now); err == nil {
-				t.Fatal("invalid discount accepted")
+			if err := validateDiscount(test.discount, 0, now); !errors.Is(err, test.want) {
+				t.Fatalf("validateDiscount() error = %v, want %v", err, test.want)
 			}
 		})
 	}
 	if err := validateDiscount(discountRow{Active: true, PerUserLimit: 1}, 1, now); err == nil {
 		t.Fatal("per-user limit ignored")
+	}
+}
+
+func TestOutOfRangeDatabaseIDsReturnBadRequest(t *testing.T) {
+	app := &application{}
+	for _, test := range []struct {
+		name, path, body string
+		handler          http.HandlerFunc
+	}{
+		{"discount preview", "/api/v1/discounts/validate", `{"plan_id":9223372036854775807,"code":"X"}`, app.previewDiscount},
+		{"card payment", "/api/v1/payments/card", `{"plan_id":9223372036854775807}`, app.cardPayment},
+		{"oxxo payment", "/api/v1/payments/oxxo", `{"plan_id":9223372036854775807}`, app.oxxoPayment},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
+			rec := httptest.NewRecorder()
+			test.handler(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/progress/movie/9223372036854775807", nil)
+	req.SetPathValue("kind", "movie")
+	req.SetPathValue("id", "9223372036854775807")
+	rec := httptest.NewRecorder()
+	if _, _, ok := progressTarget(rec, req); ok || rec.Code != http.StatusBadRequest {
+		t.Fatalf("out-of-range progress id accepted: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProfileNameLimitUsesCharacters(t *testing.T) {
+	app := &application{}
+	body := `{"name":"` + strings.Repeat("é", 51) + `"}`
+	for _, test := range []struct {
+		method  string
+		handler http.HandlerFunc
+	}{
+		{http.MethodPost, app.createProfile},
+		{http.MethodPatch, app.patchProfile},
+	} {
+		req := httptest.NewRequest(test.method, "/api/v1/profiles/"+uuid.NewString(), strings.NewReader(body))
+		req.SetPathValue("id", strings.TrimPrefix(req.URL.Path, "/api/v1/profiles/"))
+		rec := httptest.NewRecorder()
+		test.handler(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s status=%d body=%s", test.method, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestPerUserRateLimitIsAtomic(t *testing.T) {
+	pool := integrationPool(t)
+	user := fixtureUser(t, pool)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `delete from users where id=$1`, user) })
+	app := &application{pool: pool}
+	handler := app.authenticated(app.rateLimited("rate-limit-test-"+uuid.NewString(), 3, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	const requests = 12
+	statuses := make(chan int, requests)
+	var wg sync.WaitGroup
+	for index := 0; index < requests; index++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodPost, "/limited", nil)
+			req.Header.Set(authctx.UserIDHeader, user.String())
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			statuses <- rec.Code
+		}()
+	}
+	wg.Wait()
+	close(statuses)
+	allowed, limited := 0, 0
+	for status := range statuses {
+		switch status {
+		case http.StatusNoContent:
+			allowed++
+		case http.StatusTooManyRequests:
+			limited++
+		default:
+			t.Errorf("unexpected status %d", status)
+		}
+	}
+	if allowed != 3 || limited != requests-3 {
+		t.Fatalf("allowed=%d limited=%d", allowed, limited)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -62,10 +63,10 @@ func (app *application) routes(mux *http.ServeMux) {
 	api.HandleFunc("PATCH /api/v1/profiles/{id}", app.patchProfile)
 	api.HandleFunc("DELETE /api/v1/profiles/{id}", app.deleteProfile)
 	api.HandleFunc("GET /api/v1/plans", app.listPlans)
-	api.HandleFunc("POST /api/v1/discounts/validate", app.previewDiscount)
+	api.HandleFunc("POST /api/v1/discounts/validate", app.rateLimited("discount_validation", 20, app.previewDiscount))
 	api.HandleFunc("POST /api/v1/payments/card", app.cardPayment)
 	api.HandleFunc("POST /api/v1/payments/oxxo", app.oxxoPayment)
-	api.HandleFunc("POST /api/v1/payments/oxxo/{ref}/simulate-payment", app.simulateOXXOPayment)
+	api.HandleFunc("POST /api/v1/payments/oxxo/{ref}/simulate-payment", app.rateLimited("oxxo_payment_simulation", 5, app.simulateOXXOPayment))
 	api.HandleFunc("GET /api/v1/payments/{id}", app.getPayment)
 	mux.Handle("/api/v1/", app.authenticated(api))
 }
@@ -94,12 +95,14 @@ func decode(w http.ResponseWriter, r *http.Request, target any) bool {
 
 func pathPositiveInt(w http.ResponseWriter, r *http.Request, name string) (int, bool) {
 	id, err := strconv.Atoi(r.PathValue(name))
-	if err != nil || id < 1 {
+	if err != nil || id < 1 || int64(id) > math.MaxInt32 {
 		jsonx.Error(w, http.StatusBadRequest, "invalid "+name)
 		return 0, false
 	}
 	return id, true
 }
+
+func validDatabaseID(id int) bool { return id > 0 && int64(id) <= math.MaxInt32 }
 
 func env(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
