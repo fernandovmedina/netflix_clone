@@ -32,6 +32,10 @@ func TestSeedVideoEndToEnd(t *testing.T) {
 		source = filepath.Join("..", "..", "seed", "video", "video.mp4")
 	}
 	input, err := os.Open(source)
+	if os.IsNotExist(err) {
+		// Seed video is not committed; point PHASE2_SEED_VIDEO at a local clip.
+		t.Skipf("seed video %s not present", source)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

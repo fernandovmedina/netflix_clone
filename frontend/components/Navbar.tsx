@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
+import { SearchBox } from "@/components/SearchBox";
 import { ArrowRightCircle, Edit2, Info, User } from "@deemlol/next-icons";
 import Image from "next/image";
 import Link from "next/link";
@@ -45,7 +46,7 @@ export const Navbar = () => {
         ))}
       </div>
       <div className="ml-auto flex items-center gap-3">
-        <Image src="/white_search.png" alt="Search" width={24} height={24} />
+        <SearchBox />
         <Image src="/white_notifications.png" alt="Notifications" width={24} height={24} className="hidden sm:block" />
         <div className="group relative hidden items-center gap-1 md:flex">
           <Image src="/gray_profile.png" alt="Profile" width={32} height={32} className="rounded" />

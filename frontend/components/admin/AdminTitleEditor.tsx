@@ -1,7 +1,9 @@
 "use client";
 
 import { UploadPanel } from "@/components/admin/UploadPanel";
-import { adminApi, apiRequest, catalogApi, type AdminTitleInput, type MetadataReference, type Season, type TitleDetail } from "@/utils/api/client";
+import { adminApi, apiRequest, artworkUrl, catalogApi, type AdminTitleInput, type MetadataReference, type Season, type TitleDetail } from "@/utils/api/client";
+import { Trash2 } from "@deemlol/next-icons";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -146,7 +148,7 @@ export function AdminTitleEditor({ kind, titleId, initialDetail }: AdminTitleEdi
   };
 
   const togglePublished = async () => {
-    if (!resolvedTitleId || (!detail?.published && !assetReady)) return;
+    if (!resolvedTitleId) return;
     try {
       const next = !detail?.published;
       await adminApi.publish(resolvedTitleId, next);
@@ -163,9 +165,9 @@ export function AdminTitleEditor({ kind, titleId, initialDetail }: AdminTitleEdi
     <div className="mx-auto max-w-5xl">
       <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0"><Link href="/admin" className="text-sm text-zinc-400 hover:text-white">← All titles</Link><h1 className="mt-2 text-3xl font-black sm:text-4xl">{resolvedTitleId ? "Edit" : "Create"} {kind === "movies" ? "movie" : "series"}</h1></div>
-        {resolvedTitleId && <button type="button" onClick={togglePublished} disabled={!detail?.published && !assetReady} className="min-h-11 w-full whitespace-nowrap rounded border border-zinc-500 px-5 font-bold hover:border-white disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">{detail?.published ? "Unpublish" : "Publish"}</button>}
+        {resolvedTitleId && <button type="button" onClick={togglePublished} className="min-h-11 w-full whitespace-nowrap rounded border border-zinc-500 px-5 font-bold hover:border-white sm:w-auto">{detail?.published ? "Unpublish" : "Publish"}</button>}
       </div>
-      {resolvedTitleId && !assetReady && !detail?.published && <p className="mb-5 rounded border border-amber-700/50 bg-amber-950/30 p-4 text-sm text-amber-100">Publishing is locked until video processing reaches Ready.</p>}
+      {resolvedTitleId && !assetReady && <p className="mb-5 rounded border border-amber-700/50 bg-amber-950/30 p-4 text-sm text-amber-100">No video is ready for this title yet. You can still publish it — viewers will see it in the catalog marked “No video yet” and it becomes playable as soon as a video finishes processing.</p>}
       {saved && <p className="mb-5 rounded bg-emerald-950/60 p-4 text-emerald-200">{saved}</p>}
       {error && <p className="mb-5 rounded bg-red-950/60 p-4 text-red-200">{error}</p>}
 
@@ -204,6 +206,8 @@ function SeriesManager({ seriesId, seasons, onReload, onAssetReady }: { seriesId
   const [seasonNumber, setSeasonNumber] = useState(seasons.length + 1);
   const [episodeTitles, setEpisodeTitles] = useState<Record<number, string>>({});
   const [error, setError] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ kind: "season" | "episode"; id: number; label: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const addSeason = async () => {
     try { await adminApi.createSeason(seriesId, seasonNumber); await onReload(); setSeasonNumber((value) => value + 1); }
@@ -218,17 +222,65 @@ function SeriesManager({ seriesId, seasons, onReload, onAssetReady }: { seriesId
     catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to create episode."); }
   };
 
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setError("");
+    try {
+      if (pendingDelete.kind === "season") await adminApi.deleteSeason(pendingDelete.id);
+      else await adminApi.deleteEpisode(pendingDelete.id);
+      setPendingDelete(null);
+      await onReload();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : `Unable to delete this ${pendingDelete.kind}.`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return <section className="mt-8 rounded-xl border border-zinc-700 bg-zinc-900/60 p-5 sm:p-7">
-    <div className="flex flex-wrap items-end justify-between gap-4"><div className="min-w-0"><h2 className="text-2xl font-black">Seasons and episodes</h2><p className="mt-1 text-sm text-zinc-400">Create episodes, then upload and monitor each episode&apos;s video independently.</p></div><div className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto"><input aria-label="Season number" type="number" min={1} value={seasonNumber} onChange={(event) => setSeasonNumber(Number(event.target.value))} className="min-h-11 min-w-0 rounded border border-zinc-600 bg-black px-3 sm:w-24" /><button type="button" onClick={addSeason} className="min-h-11 whitespace-nowrap rounded bg-white px-4 font-bold text-black">Add season</button></div></div>
+    <div className="flex flex-wrap items-end justify-between gap-4"><div className="min-w-0"><h2 className="text-2xl font-black">Seasons and episodes</h2><p className="mt-1 text-sm text-zinc-400">Create episodes, then upload each episode&apos;s thumbnail and video independently.</p></div><div className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto"><input aria-label="Season number" type="number" min={1} value={seasonNumber} onChange={(event) => setSeasonNumber(Number(event.target.value))} className="min-h-11 min-w-0 rounded border border-zinc-600 bg-black px-3 sm:w-24" /><button type="button" onClick={addSeason} className="min-h-11 whitespace-nowrap rounded bg-white px-4 font-bold text-black">Add season</button></div></div>
     {error && <p className="mt-4 text-red-300">{error}</p>}
     <div className="mt-6 grid gap-6">
       {seasons.map((season, index) => {
         const seasonId = season.season_id ?? season.id;
-        return <article key={seasonId ?? index} className="min-w-0 rounded-lg border border-zinc-700 bg-black/50 p-4"><h3 className="text-xl font-bold">Season {season.season_number ?? season.number ?? index + 1}</h3>
-          <div className="mt-4 grid min-w-0 gap-4">{season.episodes.map((episode, episodeIndex) => <div key={episode.episode_id ?? episode.id ?? episodeIndex} className="min-w-0 rounded border border-zinc-800 p-4"><p className="break-words font-bold">{episode.episode_number ?? episode.episode ?? episodeIndex + 1}. {episode.title}</p>{(episode.episode_id ?? episode.id) && <div className="mt-3 min-w-0"><UploadPanel endpoint={`/api/v1/admin/episodes/${episode.episode_id ?? episode.id}/video`} label="Episode video" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv" initialAssetId={episode.asset_id} onReady={onAssetReady} /></div>}</div>)}</div>
+        const seasonLabel = `Season ${season.season_number ?? season.number ?? index + 1}`;
+        return <article key={seasonId ?? index} className="min-w-0 rounded-lg border border-zinc-700 bg-black/50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="min-w-0 text-xl font-bold">{seasonLabel}</h3>
+            {seasonId && <button type="button" onClick={() => setPendingDelete({ kind: "season", id: seasonId, label: seasonLabel })} aria-label={`Delete ${seasonLabel}`} title={`Delete ${seasonLabel}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-red-800 text-red-300 hover:border-red-500 hover:bg-red-950/60"><Trash2 size={18} /></button>}
+          </div>
+          <div className="mt-4 grid min-w-0 gap-4">{season.episodes.map((episode, episodeIndex) => {
+            const episodeId = episode.episode_id ?? episode.id;
+            const episodeLabel = `${episode.episode_number ?? episode.episode ?? episodeIndex + 1}. ${episode.title}`;
+            return <div key={episodeId ?? episodeIndex} className="min-w-0 rounded border border-zinc-800 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <div className="relative aspect-video w-20 shrink-0 overflow-hidden rounded bg-zinc-800">{episode.thumbnail_url && <Image src={artworkUrl(episode.thumbnail_url)} alt="" fill sizes="5rem" className="object-cover" unoptimized />}</div>
+                  <p className="min-w-0 break-words font-bold">{episodeLabel}</p>
+                </div>
+                {episodeId && <button type="button" onClick={() => setPendingDelete({ kind: "episode", id: episodeId, label: episode.title })} aria-label={`Delete episode ${episode.title}`} title={`Delete episode ${episode.title}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-red-800 text-red-300 hover:border-red-500 hover:bg-red-950/60"><Trash2 size={18} /></button>}
+              </div>
+              {episodeId && <div className="mt-3 grid min-w-0 gap-3">
+                <UploadPanel endpoint={`/api/v1/admin/episodes/${episodeId}/thumbnail`} label="Episode thumbnail" accept="image/jpeg,image/png,image/webp" pollAsset={false} onUploaded={onReload} />
+                <UploadPanel endpoint={`/api/v1/admin/episodes/${episodeId}/video`} label="Episode video" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mkv" initialAssetId={episode.asset_id} onReady={onAssetReady} />
+              </div>}
+            </div>;
+          })}</div>
           {seasonId && <div className="mt-4 flex flex-col gap-2 sm:flex-row"><input value={episodeTitles[seasonId] ?? ""} onChange={(event) => setEpisodeTitles((current) => ({ ...current, [seasonId]: event.target.value }))} placeholder="New episode title" className="min-h-11 flex-1 rounded border border-zinc-600 bg-black px-4" /><button type="button" onClick={() => addEpisode(season)} className="min-h-11 rounded border border-white px-4 font-bold">Add episode</button></div>}
         </article>;
       })}
     </div>
+
+    {pendingDelete && <div role="dialog" aria-modal="true" aria-label="Confirm deletion" className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => !deleting && setPendingDelete(null)}>
+      <div className="w-full max-w-md rounded-xl border border-zinc-700 bg-zinc-950 p-6" onClick={(event) => event.stopPropagation()}>
+        <h2 className="text-2xl font-black">Delete this {pendingDelete.kind}?</h2>
+        <p className="mt-3 text-zinc-300">“{pendingDelete.label}” will be removed{pendingDelete.kind === "season" ? ", together with every episode inside it" : ""}.</p>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row-reverse">
+          <button type="button" onClick={confirmDelete} disabled={deleting} className="min-h-11 flex-1 rounded bg-red-600 px-5 font-bold hover:bg-red-700 disabled:cursor-wait disabled:opacity-60">{deleting ? "Deleting…" : "Delete"}</button>
+          <button type="button" onClick={() => setPendingDelete(null)} disabled={deleting} className="min-h-11 rounded border border-zinc-600 px-5 font-bold hover:border-white disabled:opacity-60">Cancel</button>
+        </div>
+      </div>
+    </div>}
   </section>;
 }

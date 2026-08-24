@@ -321,38 +321,44 @@ func catalogIsCurrent(ctx context.Context, pool dbPool, root, mediaRoot string) 
 			expectedEpisodes += len(season.Episodes)
 		}
 	}
-	expectedAssets := len(movies.Movies) + expectedEpisodes
-	var titles, matchingMovies, matchingSeries, movieCount, seriesCount, seasonCount, episodeCount, assetCount, jobCount int
-	err = pool.QueryRow(ctx, `select
-		(select count(*) from titles),
-		(select count(*) from titles where type='Movie' and title=any($1)),
-		(select count(*) from titles where type='TV Show' and title=any($2)),
-		(select count(*) from movies),(select count(*) from series),(select count(*) from seasons),(select count(*) from episodes),
-		(select count(*) from video_assets where status<>'superseded'),(select count(*) from video_jobs)`, movieNames, seriesNames).Scan(&titles, &matchingMovies, &matchingSeries, &movieCount, &seriesCount, &seasonCount, &episodeCount, &assetCount, &jobCount)
-	if err != nil {
-		return false, err
-	}
-	if titles != len(movieNames)+len(seriesNames) || matchingMovies != len(movieNames) || matchingSeries != len(seriesNames) || movieCount != len(movieNames) || seriesCount != len(seriesNames) || seasonCount != expectedSeasons || episodeCount != expectedEpisodes || assetCount != expectedAssets || jobCount != expectedAssets {
-		return false, nil
-	}
-	expectedSources := make(map[string]string, expectedAssets)
+	// Only entries whose seed clip is actually on disk are seed-managed. Every
+	// other asset belongs to an administrator upload, which a reset must not
+	// treat as drift and must not destroy.
+	expectedSources := make(map[string]string, len(movies.Movies)+expectedEpisodes)
 	for _, item := range movies.Movies {
-		source, sourceErr := seedVideoPath(root, item.VideoSource)
+		source, present, sourceErr := seedVideoSource(root, item.VideoSource)
 		if sourceErr != nil {
 			return false, sourceErr
 		}
-		expectedSources[assetIdentity("movie", item.Name, 0, 0)] = source
+		if present {
+			expectedSources[assetIdentity("movie", item.Name, 0, 0)] = source
+		}
 	}
 	for _, item := range seriesData.Series {
-		source, sourceErr := seedVideoPath(root, item.VideoSource)
+		source, present, sourceErr := seedVideoSource(root, item.VideoSource)
 		if sourceErr != nil {
 			return false, sourceErr
+		}
+		if !present {
+			continue
 		}
 		for _, itemSeason := range item.Seasons {
 			for _, itemEpisode := range itemSeason.Episodes {
 				expectedSources[assetIdentity("episode", item.Name, itemSeason.Number, itemEpisode.Number)] = source
 			}
 		}
+	}
+	var titles, matchingMovies, matchingSeries, movieCount, seriesCount, seasonCount, episodeCount int
+	err = pool.QueryRow(ctx, `select
+		(select count(*) from titles),
+		(select count(*) from titles where type='Movie' and title=any($1)),
+		(select count(*) from titles where type='TV Show' and title=any($2)),
+		(select count(*) from movies),(select count(*) from series),(select count(*) from seasons),(select count(*) from episodes)`, movieNames, seriesNames).Scan(&titles, &matchingMovies, &matchingSeries, &movieCount, &seriesCount, &seasonCount, &episodeCount)
+	if err != nil {
+		return false, err
+	}
+	if titles != len(movieNames)+len(seriesNames) || matchingMovies != len(movieNames) || matchingSeries != len(seriesNames) || movieCount != len(movieNames) || seriesCount != len(seriesNames) || seasonCount != expectedSeasons || episodeCount != expectedEpisodes {
+		return false, nil
 	}
 	rows, err := pool.Query(ctx, `select va.kind,coalesce(movie_title.title,series_title.title),coalesce(se.season_number,0),coalesce(e.episode_number,0),coalesce(va.source_path,'')
 		from video_assets va
@@ -373,7 +379,12 @@ func catalogIsCurrent(ctx context.Context, pool dbPool, root, mediaRoot string) 
 		}
 		identity := assetIdentity(kind, title, seasonNumber, episodeNumber)
 		expectedPath, ok := expectedSources[identity]
-		if !ok || seen[identity] || sourcePath == "" {
+		if !ok {
+			// An administrator upload, or a title whose seed clip is absent.
+			// Neither is seed-managed, so neither counts as drift.
+			continue
+		}
+		if seen[identity] || sourcePath == "" {
 			return false, nil
 		}
 		seen[identity] = true
@@ -680,28 +691,29 @@ func ensureAsset(ctx context.Context, tx pgx.Tx, store storage.Store, root, kind
 	if kind == "episode" {
 		column = "id_episode"
 	}
-	var assetID string
-	created := false
-	err := tx.QueryRow(ctx, fmt.Sprintf(`select id::text from video_assets where %s=$1`, column), targetID).Scan(&assetID)
-	if err != pgx.ErrNoRows {
-		if err != nil {
-			return err
-		}
-	} else {
-		err = tx.QueryRow(ctx, fmt.Sprintf(`insert into video_assets(kind,%s,status) values($1,$2,'pending') returning id::text`, column), kind, targetID).Scan(&assetID)
-		if err != nil {
-			return err
-		}
-		created = true
-	}
-	if !created {
-		return nil
-	}
-	sourceKey := filepath.ToSlash(filepath.Join("sources", assetID, "source.mp4"))
-	videoPath, err := seedVideoPath(root, videoSource)
+	videoPath, present, err := seedVideoSource(root, videoSource)
 	if err != nil {
 		return err
 	}
+	var assetID string
+	err = tx.QueryRow(ctx, fmt.Sprintf(`select id::text from video_assets where %s=$1`, column), targetID).Scan(&assetID)
+	if err == nil {
+		return nil
+	}
+	if err != pgx.ErrNoRows {
+		return err
+	}
+	// Seed media is deliberately not distributed with the repository. Without a
+	// clip on disk the catalog still imports and the title simply carries no
+	// video until an administrator uploads one.
+	if !present {
+		return nil
+	}
+	err = tx.QueryRow(ctx, fmt.Sprintf(`insert into video_assets(kind,%s,status) values($1,$2,'pending') returning id::text`, column), kind, targetID).Scan(&assetID)
+	if err != nil {
+		return err
+	}
+	sourceKey := filepath.ToSlash(filepath.Join("sources", assetID, "source.mp4"))
 	f, err := os.Open(videoPath)
 	if err != nil {
 		return err
@@ -718,6 +730,23 @@ func ensureAsset(ctx context.Context, tx pgx.Tx, store storage.Store, root, kind
 	}
 	_, err = tx.Exec(ctx, `insert into video_jobs(asset_id,status) select $1,'queued' where not exists(select 1 from video_jobs where asset_id=$1)`, assetID)
 	return err
+}
+
+// seedVideoSource resolves the clip a manifest entry selects and reports
+// whether it exists locally. A fresh clone has no seed media at all.
+func seedVideoSource(root, selection string) (string, bool, error) {
+	path, err := seedVideoPath(root, selection)
+	if err != nil {
+		return "", false, err
+	}
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return path, false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return path, !info.IsDir() && info.Size() > 0, nil
 }
 
 func seedVideoPath(root, selection string) (string, error) {

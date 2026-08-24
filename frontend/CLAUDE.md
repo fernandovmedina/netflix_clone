@@ -55,10 +55,10 @@ app/
 └── admin/                       dashboard, movies/new, movies/[id], series/new, series/[id]
 
 components/
-├── Navbar · Hero · Carousel · CatalogPage · TitleModal · AlertMessage
+├── Navbar · SearchBox · Hero · Carousel · CatalogPage · TitleModal · AlertMessage
 ├── AuthProvider                 session context
 ├── VideoPlayer                  hls.js ABR player
-├── admin/{AdminTitleEditor, UploadPanel, StatusPill}
+├── admin/{AdminShell, AdminTitleEditor, AdminTitlePreview, UploadPanel, StatusPill}
 └── payments/{PaymentShell, DiscountField, PaymentBreakdown}
 
 utils/
@@ -91,6 +91,45 @@ The middleware is a **UX guard, not a security boundary** — authorization is e
 - Quality menu is built from `hls.levels` (`Auto` plus each rendition). `capLevelToPlayerSize` is on.
 - Error recovery is bounded: up to two network recoveries (each refreshing the session first, then `startLoad()`) and two media recoveries via `recoverMediaError()`. Beyond that it surfaces an error instead of retrying forever. A successful fragment load resets the counters.
 - Resumes from saved watch progress when it is within 95% of the duration, and persists progress every 10 seconds.
+
+## The "no video yet" state
+
+Seed video is not committed, so a fresh clone browses a catalog where **no title
+has a video**. The public catalog returns those titles anyway — artwork and
+metadata with `asset_id: null` — and the client is responsible for saying so.
+
+`playbackState(item)` in `utils/api/client.ts` collapses `asset_id` and
+`asset_status` into one of `ready` / `processing` / `failed` / `missing`, and
+`playbackLabel` / `playbackHint` give the copy. Use those rather than
+re-deriving the state: `Carousel` badges the artwork, `Hero` and `TitleModal`
+label the disabled play button and explain why, and `VideoPlayer` treats a
+403/404 on the manifest as "no video yet" rather than a transient network fault
+worth retrying.
+
+Publishing is deliberately **not** gated on a ready asset — an admin can publish
+a metadata-only title and it appears in browse marked "No video yet". Playback
+stays gated in the backend: streaming serves an asset only when it is `ready`
+and its title is published.
+
+## Browse search (`components/SearchBox.tsx`)
+
+The navbar search icon expands into an input that queries `GET /api/v1/titles?q=`
+after a 300 ms debounce. **It matches on the title name only** — the backend
+`q` filter is a case-insensitive `ilike` against `titles.title`, nothing else.
+Results open the same `TitleModal` the carousels use, so the box works on every
+`/home/*` page without those pages holding any search state. A normal user only
+ever sees published titles whose asset is `ready`, because that is what the
+public catalog projection returns.
+
+## Admin CRUD (`app/admin/page.tsx`)
+
+Each dashboard row carries icon actions — view (`Eye`), edit (`Edit2`) and
+delete (`Trash2`) — with delete behind a confirmation dialog. View opens
+`AdminTitlePreview`, a read-only record of the full title including its season
+and episode ladder. Delete needs the **entity** id, not the title id:
+`movie_id` for a movie and `series_id` for a series, both of which the catalog
+list projection returns. The series editor mirrors this for seasons and
+episodes, and every episode gets its own thumbnail upload alongside its video.
 
 ## Payments UI
 

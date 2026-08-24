@@ -279,7 +279,7 @@ profiles (id uuid pk, user_id uuid references users(id) on delete cascade,
 
 ### Changes to existing tables
 
-- `titles` gains `published boolean not null default false` — nothing reaches a normal user until it is both `published` **and** its asset is `ready`.
+- `titles` gains `published boolean not null default false` — nothing reaches a normal user until it is `published`. A published title with no ready asset is still browsable (artwork and metadata, `asset_id: null`) so it can render a "no video yet" placeholder; **playback** additionally requires the asset to be `ready`, which streaming enforces on every request.
 - `watch_progress.user_id` / `favorites.user_id` now carry a real FK to `users(id)`.
 - `watch_progress` gains `unique (user_id, id_movie)` and `unique (user_id, id_episode)` so upserts are atomic across instances.
 - Add the indexes the catalog actually reads by: `titles(type) where deleted_at is null`, `title_genres(id_genre)`, `episodes(id_season, episode_number)`.
@@ -296,20 +296,29 @@ only catalog data, `video_assets`, `video_jobs`, and the exact `/media/hls` and
 `/media/sources` trees, then queues each movie or series episode from its
 manifest-selected source. The optional `video_source` field accepts `short` or
 `long` and defaults to `short`; a series choice applies to all of its episodes.
-`short` uses `seed/video/video-short.mp4`, while `long` uses the owner's
-untouched `seed/video/video.mp4`. Attack and Death Note currently opt into the
-long source, covering one movie and five episodes. When catalog and every
-selected source fingerprint are already current, the importer uses
-the normal idempotent importer and preserves ready media, so restarting a
-dependent worker cannot accidentally trigger another transcode:
+`short` uses `seed/video/video-short.mp4` and `long` uses
+`seed/video/video.mp4`. **Neither is committed** — `seed/video/` is git-ignored,
+so a fresh clone imports the catalog with artwork and metadata and no video at
+all, and an administrator uploads clips through `/admin`. When a clip *is*
+present locally the importer uses it; when it is absent the title simply gets no
+`video_assets` row. Attack and Death Note opt into the long source, covering one
+movie and five episodes.
+
+The importer fingerprints every seed source that exists on disk by SHA-256.
+When the catalog and those fingerprints are already current it falls back to the
+normal idempotent importer and preserves ready media, so restarting a dependent
+worker cannot accidentally trigger another transcode. Assets that are **not**
+seed-managed — anything an administrator uploaded, and everything on a clone
+with no seed media at all — are never counted as drift and are never destroyed
+by a reset:
 
 ```sh
 docker compose up --build seed
 ```
 
-The committed short clip is deterministically derived from the long source by
-the seed tool (FFmpeg must be on `PATH`). It is re-encoded to begin on a clean
-video keyframe and retains AAC audio:
+The short clip can be derived deterministically from a long source by the seed
+tool (FFmpeg must be on `PATH`). It is re-encoded to begin on a clean video
+keyframe and retains AAC audio:
 
 ```sh
 cd database/seed

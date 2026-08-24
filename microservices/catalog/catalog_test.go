@@ -291,7 +291,7 @@ func TestSeriesUsesResolvedSeriesIDAndOrdersHierarchy(t *testing.T) {
 	if err = json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Title != prefix || got.SeriesID != seriesID || len(got.Seasons) != 2 {
+	if got.Title != prefix || got.SeriesID == nil || *got.SeriesID != seriesID || len(got.Seasons) != 2 {
 		t.Fatalf("unexpected series response: %#v", got)
 	}
 	if got.Seasons[0].SeasonNumber != 1 || got.Seasons[1].SeasonNumber != 2 ||

@@ -18,8 +18,11 @@ The tests always send user-facing requests through nginx. They read `BASE_URL`
 `ADMIN_PASSWORD`. The latter two also default to the values in the repository
 `.env` file.
 
-The upload/transcode test reuses `seed/video/video.mp4` and requires the running
-worker containers plus Docker CLI access. Skip that slower test with:
+The upload/transcode test needs a local video clip, the running worker
+containers, and Docker CLI access. Seed video is **not committed** (see
+[`seed/video/README.md`](../../seed/video/README.md)), so the test **skips
+itself** unless `seed/video/video-short.mp4` exists or `INTEGRATION_UPLOAD_VIDEO`
+points at a clip. Skip that slower test explicitly with:
 
 ```sh
 go test -tags=integration ./... -v -short

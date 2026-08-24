@@ -1,6 +1,6 @@
 "use client";
 
-import { artworkUrl, isPlayable, watchHref, type CatalogItem } from "@/utils/api/client";
+import { artworkUrl, playbackHint, playbackLabel, playbackState, watchHref, type CatalogItem } from "@/utils/api/client";
 import { Info, Play } from "@deemlol/next-icons";
 import Link from "next/link";
 
@@ -10,7 +10,8 @@ type HeroProps = {
 };
 
 export function Hero({ item, onMoreInfo }: HeroProps) {
-  const playable = isPlayable(item);
+  const state = playbackState(item);
+  const playable = state === "ready";
 
   return (
     <section
@@ -38,12 +39,12 @@ export function Hero({ item, onMoreInfo }: HeroProps) {
               id: item.progress_id ?? item.movie_id,
               title: item.title,
             })}
-            title={playable ? "Play title" : "This title is still processing"}
+            title={playbackHint(state)}
             className="flex items-center gap-2 rounded bg-white px-6 py-2.5 font-bold text-black hover:bg-white/75 disabled:cursor-not-allowed disabled:bg-gray-600 disabled:text-gray-300"
           >
             <Play size={22} fill="currentColor" />
             Play
-          </Link> : <button type="button" disabled title="This title is still processing" className="flex items-center gap-2 rounded bg-gray-600 px-6 py-2.5 font-bold text-gray-300"><Play size={22} fill="currentColor" />Processing</button>}
+          </Link> : <button type="button" disabled title={playbackHint(state)} className="flex items-center gap-2 rounded bg-gray-600 px-6 py-2.5 font-bold text-gray-300"><Play size={22} fill="currentColor" />{playbackLabel(state)}</button>}
           <button
             type="button"
             onClick={() => onMoreInfo(item)}

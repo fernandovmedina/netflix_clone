@@ -116,6 +116,16 @@ export function VideoPlayer({ assetId, title, progressKind, progressId }: VideoP
       });
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
+        // A manifest the streaming service will not serve is not a transient
+        // network fault: the asset has no ready ladder. Retrying cannot fix it.
+        const manifestStatus = data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ? data.response?.code : undefined;
+        if (manifestStatus === 403 || manifestStatus === 404) {
+          setError("This title has no video yet. An administrator can upload one from the admin panel.");
+          setLoading(false);
+          hls.destroy();
+          hlsRef.current = null;
+          return;
+        }
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR && recoveryAttempts.current.network < 2) {
           recoveryAttempts.current.network += 1;
           authApi.refresh().catch(() => undefined).finally(() => hls.startLoad());

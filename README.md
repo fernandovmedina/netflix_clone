@@ -284,45 +284,84 @@ port = 54322          # Direct PostgreSQL connection
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) — frontend package manager
-- [Go 1.25+](https://go.dev) — microservices
-- [Docker](https://www.docker.com) — containers
-- [Supabase CLI](https://supabase.com/docs/guides/cli) — local Supabase stack
+- [Docker](https://www.docker.com) — runs the whole stack, including PostgreSQL
+- [Go 1.25+](https://go.dev) — only to run the microservice tests directly
+- [pnpm](https://pnpm.io) — only to run the frontend outside its container
 
-### 1. Start Supabase locally
-
-```bash
-supabase start
-```
-
-Apply the schema:
+### 1. Configure the environment
 
 ```bash
-psql postgresql://postgres:postgres@localhost:54322/postgres -f database/database.sql
+cp .env.example .env
 ```
 
-### 2. Start the frontend
+Edit `.env` and set at least `JWT_SECRET`, `POSTGRES_PASSWORD`, `ADMIN_EMAIL`
+and `ADMIN_PASSWORD`. Everything else has a working local default. Only
+`NEXT_PUBLIC_*` values ever reach the browser bundle.
+
+### 2. Start everything
+
+```bash
+docker compose up -d --build
+```
+
+That brings up PostgreSQL, applies the migrations, seeds the catalog, and starts
+every service behind nginx.
+
+- Frontend — <http://localhost:3000>
+- API — <http://localhost:8080>
+- PostgreSQL — `localhost:5433`
+
+Sign in with the `ADMIN_EMAIL` / `ADMIN_PASSWORD` you set; the migration runner
+bootstraps that account on first start.
+
+### 3. Add video
+
+**A fresh clone has no video.** Only code is committed — no `.mp4` is in the
+repository — so the catalog seeds with titles, descriptions and artwork, and
+every title is marked **"No video yet"** until someone uploads one. This is the
+expected starting state.
+
+To add video, sign in as the administrator, open
+<http://localhost:3000/admin> and upload a clip to a title:
+
+- a **movie** takes a single video;
+- a **series** takes one video per episode, plus an optional episode thumbnail.
+
+Uploads return immediately; a worker transcodes each one into an HLS ladder in
+the background and the panel flips to **Ready** on its own. The title becomes
+playable at that point.
+
+You can also pre-seed from local clips instead of uploading — see
+[`seed/video/README.md`](seed/video/README.md).
+
+### Running pieces outside Docker
+
+Frontend against the containerized backend (stop the `frontend` container first,
+or it will hold port 3000):
 
 ```bash
 cd frontend
-bun install
-bun dev
+pnpm install
+pnpm dev
 ```
 
-Runs at http://localhost:3000
-
-### 3. Start the auth microservice
+### Tests
 
 ```bash
-cd microservices/auth
-go run main.go
+for module in microservices/{shared,auth,catalog,user,streaming,worker} database/seed; do
+  (cd "$module" && go build ./... && go vet ./... && go test -race ./...)
+done
+
+cd frontend && pnpm build && pnpm lint && pnpm exec tsc --noEmit
 ```
 
-### 4. Docker Compose (all services)
+End-to-end tests need the stack running:
 
 ```bash
-docker compose -f microservices/docker-compose.yaml up --build
+cd microservices/integration && go test -tags=integration -count=1 ./...
 ```
+
+Tests that need a real video clip skip themselves when none is present.
 
 ---
 

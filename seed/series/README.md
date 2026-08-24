@@ -61,7 +61,7 @@ Each series includes title metadata and a nested list of seasons and episodes:
 | Field | Type | Description |
 | --- | --- | --- |
 | `name` | string | Unique display title. |
-| `video_source` | string | Optional `short` (default) or `long`; applies to every episode in the series. |
+| `video_source` | string | Optional `short` (default) or `long`; selects which local clip in `seed/video/` the importer uses, for every episode in the series. Neither is committed — see [`seed/video/README.md`](../video/README.md). |
 | `year_released` | integer | Four-digit release year. |
 | `description` | string | English catalog summary. |
 | `genres` | string[] | Genres used to classify the title. |

@@ -42,7 +42,7 @@ Each item in `seed.json` follows this structure:
 | Field | Type | Description |
 | --- | --- | --- |
 | `name` | string | Unique display title. |
-| `video_source` | string | Optional `short` (default) or `long` seed clip selection. |
+| `video_source` | string | Optional `short` (default) or `long`; selects which local clip in `seed/video/` the importer uses. Neither is committed — see [`seed/video/README.md`](../video/README.md). |
 | `year_released` | integer | Four-digit release year. |
 | `description` | string | English catalog summary. |
 | `genres` | string[] | Genres used to classify the title. |

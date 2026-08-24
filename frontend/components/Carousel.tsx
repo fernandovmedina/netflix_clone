@@ -1,6 +1,6 @@
 "use client";
 
-import { artworkUrl, type HomeRow } from "@/utils/api/client";
+import { artworkUrl, playbackLabel, playbackState, type HomeRow } from "@/utils/api/client";
 import Image from "next/image";
 import { useRef } from "react";
 
@@ -48,6 +48,11 @@ export function Carousel({ row, onSelect }: CarouselProps) {
                 className="object-cover"
                 unoptimized
               />
+              {playbackState(item) !== "ready" && (
+                <span className="absolute left-2 top-2 rounded bg-black/80 px-2 py-1 text-xs font-bold uppercase tracking-wide text-amber-300 ring-1 ring-amber-400/40">
+                  {playbackLabel(playbackState(item))}
+                </span>
+              )}
               {item.title && (
                 <span className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/90 to-transparent px-3 pb-2 pt-8 text-sm font-semibold">
                   {item.title}

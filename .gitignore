@@ -52,6 +52,14 @@ supabase/
 *.m3u8
 /.pnpm-store/
 
+# local seed video. Only code belongs in the repository: a fresh clone seeds the
+# catalog with metadata and artwork but no video, and an administrator uploads
+# clips through /admin to start testing. See seed/video/README.md.
+/seed/video/*.mp4
+/seed/video/*.mov
+/seed/video/*.mkv
+/seed/video/*.webm
+
 # Compiled Go service binaries (produced by `go build ./...` in a module dir)
 /microservices/auth/auth
 /microservices/catalog/catalog

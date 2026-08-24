@@ -521,52 +521,81 @@ func (s *suite) seriesFixture(t *testing.T, published bool, status string) serie
 	return f
 }
 
+// TestCatalogVisibility pins the public catalog contract: publication alone
+// decides whether a title is browsable, so a published title whose video is
+// still pending appears with artwork and metadata and renders as "no video
+// yet". What must never escape is the asset id, because that is the handle the
+// player would give the streaming service.
 func TestCatalogVisibility(t *testing.T) {
 	s := newSuite(t)
 	normal := s.arrangedUser(t, "catalog")
 	admin := s.admin(t)
 	unpublished := s.movieFixture(t, false, "ready")
 	pending := s.movieFixture(t, true, "pending")
-	for _, f := range []movieFixture{unpublished, pending} {
-		paths := []string{"/api/v1/titles?q=" + url.QueryEscape(f.Name), "/api/v1/titles/" + strconv.Itoa(f.TitleID), "/api/v1/movies/" + strconv.Itoa(f.MovieID), "/api/v1/home"}
-		for _, path := range paths {
-			r := normal.API.do(http.MethodGet, path, nil, nil)
-			if strings.HasSuffix(path, "/home") || strings.Contains(path, "/titles?q=") {
-				requireStatus(t, http.MethodGet, path, r, http.StatusOK)
-				if bytes.Contains(r.Body, []byte(f.Name)) {
-					t.Fatalf("GET %s leaked hidden title %q: %s", path, f.Name, r.Body)
-				}
-			} else {
-				requireStatus(t, http.MethodGet, path, r, http.StatusNotFound)
-			}
-		}
-		all := normal.API.do(http.MethodGet, "/api/v1/titles?limit=100", nil, nil)
-		requireStatus(t, http.MethodGet, "/api/v1/titles?limit=100", all, http.StatusOK)
-		if bytes.Contains(all.Body, []byte(f.Name)) {
-			t.Fatalf("generic title listing leaked hidden title %q: %s", f.Name, all.Body)
-		}
-		r := admin.do(http.MethodGet, "/api/v1/titles?q="+url.QueryEscape(f.Name), nil, nil)
-		requireStatus(t, http.MethodGet, "/api/v1/titles", r, http.StatusOK)
-		if !bytes.Contains(r.Body, []byte(f.Name)) || !bytes.Contains(r.Body, []byte(`"asset_status":"`+map[bool]string{true: "ready", false: "pending"}[f == unpublished]+`"`)) {
-			t.Fatalf("admin projection missing title/state for %q: %s", f.Name, r.Body)
-		}
-	}
-	pendingSeries := s.seriesFixture(t, true, "pending")
+
+	// Unpublished stays completely hidden, ready asset or not.
 	for _, path := range []string{
-		"/api/v1/titles?q=" + url.QueryEscape(pendingSeries.Name),
-		"/api/v1/titles/" + strconv.Itoa(pendingSeries.TitleID),
-		"/api/v1/series/" + strconv.Itoa(pendingSeries.TitleID),
+		"/api/v1/titles?q=" + url.QueryEscape(unpublished.Name),
+		"/api/v1/titles/" + strconv.Itoa(unpublished.TitleID),
+		"/api/v1/movies/" + strconv.Itoa(unpublished.MovieID),
 		"/api/v1/home",
 		"/api/v1/titles?limit=100",
 	} {
 		r := normal.API.do(http.MethodGet, path, nil, nil)
 		if strings.Contains(path, "?q=") || path == "/api/v1/home" || strings.Contains(path, "limit=100") {
 			requireStatus(t, http.MethodGet, path, r, http.StatusOK)
-			if bytes.Contains(r.Body, []byte(pendingSeries.Name)) {
-				t.Fatalf("GET %s leaked pending series %q: %s", path, pendingSeries.Name, r.Body)
+			if bytes.Contains(r.Body, []byte(unpublished.Name)) {
+				t.Fatalf("GET %s leaked unpublished title %q: %s", path, unpublished.Name, r.Body)
 			}
-		} else {
-			requireStatus(t, http.MethodGet, path, r, http.StatusNotFound)
+			continue
+		}
+		requireStatus(t, http.MethodGet, path, r, http.StatusNotFound)
+	}
+
+	// Published but still transcoding: browsable, never playable.
+	for _, path := range []string{
+		"/api/v1/titles?q=" + url.QueryEscape(pending.Name),
+		"/api/v1/titles/" + strconv.Itoa(pending.TitleID),
+		"/api/v1/movies/" + strconv.Itoa(pending.MovieID),
+	} {
+		r := normal.API.do(http.MethodGet, path, nil, nil)
+		requireStatus(t, http.MethodGet, path, r, http.StatusOK)
+		if !bytes.Contains(r.Body, []byte(pending.Name)) {
+			t.Fatalf("GET %s hid published pending title %q: %s", path, pending.Name, r.Body)
+		}
+		if !bytes.Contains(r.Body, []byte(`"asset_id":null`)) {
+			t.Fatalf("GET %s exposed an asset id for a pending title: %s", path, r.Body)
+		}
+		if bytes.Contains(r.Body, []byte(pending.AssetID)) {
+			t.Fatalf("GET %s leaked the pending asset id %q: %s", path, pending.AssetID, r.Body)
+		}
+	}
+
+	for _, f := range []movieFixture{unpublished, pending} {
+		wantStatus := "pending"
+		if f.AssetID == unpublished.AssetID {
+			wantStatus = "ready"
+		}
+		r := admin.do(http.MethodGet, "/api/v1/titles?q="+url.QueryEscape(f.Name), nil, nil)
+		requireStatus(t, http.MethodGet, "/api/v1/titles", r, http.StatusOK)
+		if !bytes.Contains(r.Body, []byte(f.Name)) || !bytes.Contains(r.Body, []byte(`"asset_status":"`+wantStatus+`"`)) {
+			t.Fatalf("admin projection missing title/state for %q: %s", f.Name, r.Body)
+		}
+	}
+
+	pendingSeries := s.seriesFixture(t, true, "pending")
+	for _, path := range []string{
+		"/api/v1/titles?q=" + url.QueryEscape(pendingSeries.Name),
+		"/api/v1/titles/" + strconv.Itoa(pendingSeries.TitleID),
+		"/api/v1/series/" + strconv.Itoa(pendingSeries.TitleID),
+	} {
+		r := normal.API.do(http.MethodGet, path, nil, nil)
+		requireStatus(t, http.MethodGet, path, r, http.StatusOK)
+		if !bytes.Contains(r.Body, []byte(pendingSeries.Name)) {
+			t.Fatalf("GET %s hid published pending series %q: %s", path, pendingSeries.Name, r.Body)
+		}
+		if bytes.Contains(r.Body, []byte(pendingSeries.AssetID)) {
+			t.Fatalf("GET %s leaked the pending episode asset id %q: %s", path, pendingSeries.AssetID, r.Body)
 		}
 	}
 	adminSeries := admin.do(http.MethodGet, "/api/v1/titles?q="+url.QueryEscape(pendingSeries.Name), nil, nil)
@@ -1078,9 +1107,16 @@ func TestUploadTranscodeReady(t *testing.T) {
 	t.Cleanup(func() { s.cleanupTitle(created.TitleID) })
 	publishPath := "/api/v1/admin/titles/" + strconv.Itoa(created.TitleID) + "/publish"
 	requireStatus(t, "POST", publishPath, admin.do("POST", publishPath, map[string]bool{"published": true}, nil), http.StatusOK)
-	video := filepath.Join("..", "..", "seed", "video", "video-short.mp4")
-	if _, err := os.Stat(video); err != nil {
-		t.Fatalf("seed video: %v", err)
+	video := os.Getenv("INTEGRATION_UPLOAD_VIDEO")
+	if video == "" {
+		video = filepath.Join("..", "..", "seed", "video", "video-short.mp4")
+	}
+	if _, err := os.Stat(video); os.IsNotExist(err) {
+		// Seed video is not committed. Drop a clip into seed/video/ or point
+		// INTEGRATION_UPLOAD_VIDEO at one to exercise the transcode pipeline.
+		t.Skipf("upload fixture %s not present", video)
+	} else if err != nil {
+		t.Fatalf("upload fixture: %v", err)
 	}
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)

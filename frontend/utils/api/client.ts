@@ -272,13 +272,15 @@ export const catalogApi = {
   home: () => apiRequest<HomeRow[]>("/api/v1/home"),
   titles: (query = "") =>
     apiRequest<ListResponse>(`/api/v1/titles${query}`).then(unwrapList),
+  search: (name: string, limit = 12) =>
+    apiRequest<ListResponse>(`/api/v1/titles?q=${encodeURIComponent(name)}&limit=${limit}&offset=0`).then(unwrapList),
   genres: () => apiRequest<MetadataReference[]>("/api/v1/genres"),
   actors: () => apiRequest<MetadataReference[]>("/api/v1/actors"),
   detail: async (item: CatalogItem) => {
     const type = item.content_type.toLowerCase();
     const series = type.includes("series") || type.includes("show");
     const resource = series ? "series" : "movies";
-    const resourceId = series ? item.series_id ?? item.id : item.movie_id ?? item.id;
+    const resourceId = series ? item.title_id ?? item.id : item.movie_id ?? item.id;
     try {
       return await apiRequest<TitleDetail>(`/api/v1/${resource}/${resourceId}`);
     } catch (reason) {
@@ -370,6 +372,12 @@ export const adminApi = {
     apiRequest<CreatedTitle>(`/api/v1/admin/${kind}/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   publish: (titleId: number, published: boolean) =>
     apiRequest<{ published: boolean }>(`/api/v1/admin/titles/${titleId}/publish`, { method: "POST", body: JSON.stringify({ published }) }),
+  deleteTitle: (kind: "movies" | "series", entityId: number) =>
+    apiRequest<void>(`/api/v1/admin/${kind}/${entityId}`, { method: "DELETE" }),
+  deleteSeason: (seasonId: number) =>
+    apiRequest<void>(`/api/v1/admin/seasons/${seasonId}`, { method: "DELETE" }),
+  deleteEpisode: (episodeId: number) =>
+    apiRequest<void>(`/api/v1/admin/episodes/${episodeId}`, { method: "DELETE" }),
   assetStatus: (assetId: string) =>
     apiRequest<AdminAssetStatus>(`/api/v1/admin/assets/${assetId}`),
   createSeason: (seriesId: number, seasonNumber: number) =>
@@ -394,8 +402,46 @@ export function titleId(item: CatalogItem): number {
   return item.title_id ?? item.id;
 }
 
-export function isPlayable(item: CatalogItem): boolean {
+export function isPlayable(item: PlayableLike): boolean {
   return Boolean(item.asset_id) && (!item.asset_status || item.asset_status === "ready");
+}
+
+type PlayableLike = { asset_id?: string | null; asset_status?: CatalogItem["asset_status"] };
+
+/**
+ * `missing` is the state a fresh clone starts in: seed media is not committed,
+ * so a published title carries artwork and metadata but no video until an
+ * administrator uploads one.
+ */
+export type PlaybackState = "ready" | "processing" | "failed" | "missing";
+
+export function playbackState(item: PlayableLike): PlaybackState {
+  if (isPlayable(item)) return "ready";
+  if (item.asset_status === "failed") return "failed";
+  if (item.asset_status === "pending" || item.asset_status === "processing") return "processing";
+  return "missing";
+}
+
+const playbackLabels: Record<PlaybackState, string> = {
+  ready: "Play",
+  processing: "Processing",
+  failed: "Unavailable",
+  missing: "No video yet",
+};
+
+export function playbackLabel(state: PlaybackState): string {
+  return playbackLabels[state];
+}
+
+const playbackHints: Record<PlaybackState, string> = {
+  ready: "Play this title",
+  processing: "The video is still being transcoded. This page updates on its own.",
+  failed: "Transcoding failed for this title. An administrator can upload the video again.",
+  missing: "No video has been uploaded for this title yet. An administrator can add one from the admin panel.",
+};
+
+export function playbackHint(state: PlaybackState): string {
+  return playbackHints[state];
 }
 
 export function watchHref(

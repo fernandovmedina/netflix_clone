@@ -64,7 +64,7 @@ netflix_clone/
 │   ├── seed/main.go          # seed importer implementation
 │   └── database.sql          # legacy schema reference, not used
 ├── docs/ARCHITECTURE.md      # the build contract: topology, schema, pipeline, API, milestones
-├── seed/                     # catalog seed: movies/, series/, video/video.mp4, artwork
+├── seed/                     # catalog seed: movies/, series/, artwork. video/ is git-ignored — see seed/video/README.md
 ├── frontend/                 # Next.js 16, React 19, TypeScript, Tailwind 4, pnpm
 │   ├── app/                  # landing, login, signup flow, home/browse, watch, admin
 │   ├── components/           # Navbar, Carousel, Hero, TitleModal, VideoPlayer, payments/, admin/
@@ -184,7 +184,7 @@ All routes are reached through `localhost:8080` and require the session cookie u
 | user | `GET/PUT /api/v1/progress/{kind}/{id}` · `GET /api/v1/progress/continue` · `GET/POST/DELETE /api/v1/favorites` · `GET/POST/GET/PATCH/DELETE /api/v1/profiles[/{id}]` |
 | payments | `GET /api/v1/plans` · `POST /api/v1/discounts/validate` · `POST /api/v1/payments/{card,oxxo}` · `POST /api/v1/payments/oxxo/{ref}/simulate-payment` · `GET /api/v1/payments/{id}` |
 
-Public catalog reads return only published titles whose asset is `ready`; the admin projection additionally exposes `pending`/`processing`/`failed` state.
+Public catalog reads return every **published** title, including titles with no video yet — those come back with `asset_id: null` and an `asset_status` of `pending`/`processing`/`failed` (or absent entirely), and the client renders them as "No video yet". The asset id is only ever populated once the ladder is `ready`, because that id is the handle the player hands to streaming. Unpublished titles stay invisible. The admin projection returns the asset id in every state.
 
 ---
 
@@ -192,6 +192,8 @@ Public catalog reads return only published titles whose asset is `ready`; the ad
 
 - **Player** (`components/VideoPlayer.tsx`): hls.js with ABR, a manual quality menu built from `hls.levels`, resume-from-progress, and bounded recovery — up to two network recoveries (each refreshing the session, then `startLoad()`) and two media recoveries, after which it surfaces an error rather than retrying forever. hls.js is preferred wherever MSE exists; the native `<video>` HLS path is a fallback for engines without it, such as iOS Safari. Register the `MEDIA_ATTACHED` listener **before** `attachMedia()` — hls.js can emit it synchronously, and a listener added afterwards misses it, leaving the source never loaded.
 - **API client** (`utils/api/client.ts`): cookies only — no token is ever held in JS. A 401 triggers a single-flight refresh, then one retry; it also refreshes in the background every 10 minutes so long viewing sessions do not expire mid-playback. (The backend accepts `Authorization: Bearer` too, but the frontend uses cookies exclusively.)
+- **Search** (`components/SearchBox.tsx`): the navbar search icon expands into a debounced input that hits `GET /api/v1/titles?q=`. It matches the **title name only** — the backend `q` filter is an `ilike` on `titles.title`. Because it lives in the navbar it works on every `/home/*` page, and results open the same `TitleModal` the carousels use.
+- **Admin** (`app/admin`): each dashboard row exposes view / edit / delete as icon actions, delete behind a confirmation. Deletes address the **entity** id (`movie_id`, `series_id`) rather than the title id, so the catalog list projection returns both. The series editor carries the same delete affordance for seasons and episodes, and every episode has its own thumbnail upload beside its video upload.
 - **Middleware** matches `/home`, `/admin`, `/watch`, `/login` and `/signup`. It is a UX guard, not a security boundary — the backend authorizes every request, and that is what actually protects data.
 - Money arrives as integer cents and is formatted for display; no float arithmetic.
 
@@ -204,4 +206,4 @@ Public catalog reads return only published titles whose asset is `ready`; the ad
 - Never upscale a rendition above the source resolution.
 - Never let a transcode block an HTTP request, and never use an in-memory job queue — it breaks horizontal scaling.
 - Never pin a session to an instance.
-- Never commit generated media or `.env`.
+- Never commit generated media, seed video or `.env`. Only code belongs in the repository: a fresh clone seeds catalog metadata and artwork with **no video**, and an administrator uploads clips through `/admin` to start testing.
