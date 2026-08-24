@@ -166,6 +166,38 @@ func TestPerUserRateLimitIsAtomic(t *testing.T) {
 	}
 }
 
+func TestPerUserRateLimitPrunesExpiredRowsGlobally(t *testing.T) {
+	pool := integrationPool(t)
+	activeUser := fixtureUser(t, pool)
+	staleUser := fixtureUser(t, pool)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `delete from users where id=any($1)`, []uuid.UUID{activeUser, staleUser})
+	})
+	const staleAction = "abandoned-rate-limit-action"
+	if _, err := pool.Exec(context.Background(), `insert into user_rate_limits(user_id,action,window_start,request_count) values($1,$2,now()-interval '100 years',1)`, staleUser, staleAction); err != nil {
+		t.Fatal(err)
+	}
+	app := &application{pool: pool}
+	handler := app.authenticated(app.rateLimited("active-rate-limit-"+uuid.NewString(), 1, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/limited", nil)
+	req.Header.Set(authctx.UserIDHeader, activeUser.String())
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var staleRows int
+	if err := pool.QueryRow(context.Background(), `select count(*) from user_rate_limits where user_id=$1 and action=$2`, staleUser, staleAction).Scan(&staleRows); err != nil {
+		t.Fatal(err)
+	}
+	if staleRows != 0 {
+		t.Fatalf("expired row for unrelated user/action was not pruned: count=%d", staleRows)
+	}
+	t.Log("bounded global cleanup pruned an expired row for another user and action")
+}
+
 func integrationPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("PHASE3_TEST_DATABASE_URL")

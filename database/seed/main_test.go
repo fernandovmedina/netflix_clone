@@ -1,10 +1,17 @@
 package main
 
 import (
+	"context"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/fernandovmedina/netflix-clone/microservices/shared/storage"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestGenerateSeedSQLIsStandaloneAndExcludesMedia(t *testing.T) {
@@ -28,4 +35,112 @@ func TestGenerateSeedSQLIsStandaloneAndExcludesMedia(t *testing.T) {
 			t.Errorf("generated SQL contains %q", forbidden)
 		}
 	}
+}
+
+func TestResetFailureRestoresDatabaseAndMedia(t *testing.T) {
+	dsn := os.Getenv("PHASE6_RESET_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("PHASE6_RESET_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+
+	mediaRoot := t.TempDir()
+	markers := map[string]string{
+		"hls/existing/master.m3u8":       "existing playlist\n",
+		"sources/existing/source.mp4":    "existing source\n",
+		"thumbnails/uploaded/custom.jpg": "existing thumbnail\n",
+	}
+	for name, contents := range markers {
+		path := filepath.Join(mediaRoot, filepath.FromSlash(name))
+		if err = os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(path, []byte(contents), 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedRoot := t.TempDir()
+	fixtures := map[string]string{
+		"movies/seed.json": `{"movies":[{"name":"Broken reset","year_released":2026,"description":"failure fixture","genres":[],"cast":[],"director":"","duration":1,"thumbnail_url":"movies/data/missing.jpg"}]}`,
+		"series/seed.json": `{"series":[]}`,
+		"video/video.mp4":  "seed video\n",
+	}
+	for name, contents := range fixtures {
+		path := filepath.Join(seedRoot, filepath.FromSlash(name))
+		if err = os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := storage.NewLocal(mediaRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	databaseBefore := catalogFingerprint(t, pool)
+	mediaBefore := mediaFingerprint(t, mediaRoot)
+	if _, err = resetAndImport(ctx, pool, store, seedRoot, mediaRoot); err == nil || !strings.Contains(err.Error(), "missing.jpg") {
+		t.Fatalf("reset error = %v, want missing artwork failure", err)
+	}
+	databaseAfter := catalogFingerprint(t, pool)
+	mediaAfter := mediaFingerprint(t, mediaRoot)
+	if !reflect.DeepEqual(databaseAfter, databaseBefore) {
+		t.Fatalf("database changed after failed reset\nbefore: %#v\nafter:  %#v", databaseBefore, databaseAfter)
+	}
+	if !reflect.DeepEqual(mediaAfter, mediaBefore) {
+		t.Fatalf("media changed after failed reset\nbefore: %#v\nafter:  %#v", mediaBefore, mediaAfter)
+	}
+	t.Logf("failed reset preserved all %d catalog table fingerprints and %d media entries", len(databaseBefore), len(mediaBefore))
+}
+
+func catalogFingerprint(t *testing.T, pool *pgxpool.Pool) map[string]string {
+	t.Helper()
+	tables := []string{"video_jobs", "video_assets", "watch_progress", "favorites", "title_actors", "title_categories", "title_genres", "episodes", "seasons", "movies", "series", "titles", "actors", "categories", "genres"}
+	result := make(map[string]string, len(tables))
+	for _, table := range tables {
+		query := fmt.Sprintf(`select md5(coalesce(string_agg(to_jsonb(row_data)::text,E'\n' order by to_jsonb(row_data)::text),'')) from %s row_data`, table)
+		var fingerprint string
+		if err := pool.QueryRow(context.Background(), query).Scan(&fingerprint); err != nil {
+			t.Fatalf("fingerprint %s: %v", table, err)
+		}
+		result[table] = fingerprint
+	}
+	return result
+}
+
+func mediaFingerprint(t *testing.T, root string) map[string]string {
+	t.Helper()
+	result := make(map[string]string)
+	if err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if relative == "." {
+			return nil
+		}
+		if info.IsDir() {
+			result[filepath.ToSlash(relative)+"/"] = fmt.Sprintf("dir:%#o", info.Mode().Perm())
+			return nil
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		digest := sha256.Sum256(contents)
+		result[filepath.ToSlash(relative)] = fmt.Sprintf("file:%#o:%x", info.Mode().Perm(), digest)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return result
 }

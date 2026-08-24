@@ -1,0 +1,3 @@
+// Package integration contains opt-in end-to-end tests for the complete stack.
+// Run them with: go test -tags=integration ./...
+package integration

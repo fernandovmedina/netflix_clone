@@ -162,8 +162,10 @@ Only `NEXT_PUBLIC_*` reaches the browser bundle. Nothing else may.
 ### Tests
 
 ```bash
-cd microservices/<service> && go test -race ./...        # unit tests: auth, catalog, streaming, user, worker, shared
-cd microservices/integration && go test -tags=integration ./...   # end-to-end, needs the stack up
+for module in microservices/{shared,auth,catalog,user,streaming,worker,integration} database/seed; do
+  (cd "$module" && go build ./... && go vet ./... && go test -race ./...)
+done
+cd microservices/integration && go test -tags=integration -count=1 ./...   # end-to-end, needs the stack up
 cd frontend && pnpm build && pnpm lint && pnpm exec tsc --noEmit
 ```
 

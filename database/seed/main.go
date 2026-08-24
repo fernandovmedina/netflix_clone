@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -109,7 +110,7 @@ func main() {
 	}
 }
 
-func resetAndImport(ctx context.Context, pool dbPool, store storage.Store, root, mediaRoot string) (string, error) {
+func resetAndImport(ctx context.Context, pool dbPool, store storage.Store, root, mediaRoot string) (counts string, returnErr error) {
 	movies, seriesData, err := manifests(root)
 	if err != nil {
 		return "", err
@@ -142,15 +143,16 @@ func resetAndImport(ctx context.Context, pool dbPool, store storage.Store, root,
 		}
 		removed = append(removed, fmt.Sprintf("%s=%d", table, tag.RowsAffected()))
 	}
-	for _, tree := range []string{"hls", "sources"} {
-		target := filepath.Join(mediaRoot, tree)
-		if filepath.Dir(target) != filepath.Clean(mediaRoot) {
-			return "", fmt.Errorf("refusing unsafe media reset target %q", target)
-		}
-		if err = os.RemoveAll(target); err != nil {
-			return "", err
-		}
+	swap, err := beginMediaSwap(mediaRoot)
+	if err != nil {
+		return "", err
 	}
+	mediaCommitted := false
+	defer func() {
+		if !mediaCommitted {
+			returnErr = errors.Join(returnErr, swap.rollback())
+		}
+	}()
 	if err = importData(ctx, tx, store, root, movies, seriesData); err != nil {
 		return "", err
 	}
@@ -167,7 +169,122 @@ func resetAndImport(ctx context.Context, pool dbPool, store storage.Store, root,
 	if err = tx.Commit(ctx); err != nil {
 		return "", err
 	}
-	return strings.Join(removed, ", "), nil
+	mediaCommitted = true
+	counts = strings.Join(removed, ", ")
+	if err = swap.discardBackup(); err != nil {
+		return counts, fmt.Errorf("catalog committed but old media backup could not be removed: %w", err)
+	}
+	return counts, nil
+}
+
+type mediaTree struct {
+	name, target, backup string
+	existed              bool
+}
+
+type mediaSwap struct {
+	backupRoot string
+	trees      []mediaTree
+}
+
+func beginMediaSwap(mediaRoot string) (*mediaSwap, error) {
+	root := filepath.Clean(mediaRoot)
+	backupRoot, err := os.MkdirTemp(root, ".seed-reset-backup-")
+	if err != nil {
+		return nil, err
+	}
+	swap := &mediaSwap{backupRoot: backupRoot}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			_ = swap.rollback()
+		}
+	}()
+	for _, name := range []string{"hls", "sources", "thumbnails"} {
+		tree := mediaTree{name: name, target: filepath.Join(root, name), backup: filepath.Join(backupRoot, name)}
+		if filepath.Dir(tree.target) != root || filepath.Dir(tree.backup) != backupRoot {
+			return nil, fmt.Errorf("refusing unsafe media swap target %q", tree.target)
+		}
+		info, statErr := os.Lstat(tree.target)
+		if statErr == nil {
+			if !info.IsDir() {
+				return nil, fmt.Errorf("media tree %q is not a directory", tree.target)
+			}
+			tree.existed = true
+			if err = os.Rename(tree.target, tree.backup); err != nil {
+				return nil, err
+			}
+		} else if !os.IsNotExist(statErr) {
+			return nil, statErr
+		}
+		swap.trees = append(swap.trees, tree)
+		if name == "thumbnails" && tree.existed {
+			if err = copyTree(tree.backup, tree.target); err != nil {
+				return nil, err
+			}
+		} else if err = os.MkdirAll(tree.target, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	succeeded = true
+	return swap, nil
+}
+
+func (swap *mediaSwap) rollback() error {
+	if swap == nil {
+		return nil
+	}
+	var result error
+	for index := len(swap.trees) - 1; index >= 0; index-- {
+		tree := swap.trees[index]
+		if err := os.RemoveAll(tree.target); err != nil {
+			result = errors.Join(result, err)
+			continue
+		}
+		if tree.existed {
+			if err := os.Rename(tree.backup, tree.target); err != nil {
+				result = errors.Join(result, err)
+			}
+		}
+	}
+	if err := os.RemoveAll(swap.backupRoot); err != nil {
+		result = errors.Join(result, err)
+	}
+	return result
+}
+
+func (swap *mediaSwap) discardBackup() error {
+	return os.RemoveAll(swap.backupRoot)
+}
+
+func copyTree(source, destination string) error {
+	return filepath.Walk(source, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(destination, relative)
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing symlink in media tree: %s", path)
+		}
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode().Perm())
+		}
+		input, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+		if err != nil {
+			_ = input.Close()
+			return err
+		}
+		_, copyErr := io.Copy(output, input)
+		return errors.Join(copyErr, input.Close(), output.Close())
+	})
 }
 
 type dbPool interface {

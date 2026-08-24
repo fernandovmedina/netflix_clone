@@ -283,7 +283,7 @@ profiles (id uuid pk, user_id uuid references users(id) on delete cascade,
 - `watch_progress.user_id` / `favorites.user_id` now carry a real FK to `users(id)`.
 - `watch_progress` gains `unique (user_id, id_movie)` and `unique (user_id, id_episode)` so upserts are atomic across instances.
 - Add the indexes the catalog actually reads by: `titles(type) where deleted_at is null`, `title_genres(id_genre)`, `episodes(id_season, episode_number)`.
-- `user_rate_limits(user_id, action, window_start, request_count)` is the shared per-user counter for discount-preview and OXXO-simulation limits. Its composite primary key makes increments atomic across all user-service replicas.
+- `user_rate_limits(user_id, action, window_start, request_count)` is the shared per-user counter for discount-preview and OXXO-simulation limits. Its composite primary key makes increments atomic across all user-service replicas. Each limited request also claims and deletes at most 100 globally expired rows with `FOR UPDATE SKIP LOCKED`, keeping retention bounded without creating a cleanup hot spot across replicas.
 
 ---
 
@@ -301,6 +301,13 @@ dependent worker cannot accidentally trigger another transcode:
 ```sh
 docker compose up --build seed
 ```
+
+Before changing catalog media, the reset atomically renames the existing HLS,
+source, and thumbnail trees into a private backup. Any import or PostgreSQL
+commit failure removes the partial replacement and restores those trees exactly;
+the backup is deleted only after the database commit is durable. Existing
+thumbnails are copied into the replacement first so non-seed uploads survive a
+successful reset as well.
 
 The reset snapshots favorites and watch progress by stable movie or episode
 identity and restores entries that still exist in the seed. Fixture-only
@@ -474,6 +481,26 @@ The user service additionally limits discount validation to 20 requests per
 user per minute and OXXO payment simulation to 5 requests per user per minute.
 Counters are in PostgreSQL, so limits are consistent across replicas. A denied
 request returns `429 {"error":"rate limit exceeded"}` with `Retry-After`.
+Every limited request opportunistically removes a bounded batch of globally
+expired buckets using `SKIP LOCKED`, including buckets for inactive users and
+actions.
+
+### Go verification
+
+Every Go module, including the untagged integration package, supports the same
+ordinary verification commands:
+
+```sh
+for module in microservices/{shared,auth,catalog,user,streaming,worker,integration} database/seed; do
+  (cd "$module" && go build ./... && go vet ./... && go test -race ./...)
+done
+```
+
+With the full stack running, execute the tagged end-to-end suite separately:
+
+```sh
+cd microservices/integration && go test -tags=integration -count=1 ./...
+```
 
 ---
 

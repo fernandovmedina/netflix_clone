@@ -128,15 +128,13 @@ export function TitleModal({ item, onClose }: TitleModalProps) {
               {(selectedSeason?.episodes ?? []).map((episode, index) => {
                 const episodePlayable = Boolean(episode.asset_id) && (!episode.asset_status || episode.asset_status === "ready");
                 return (
-                  <div key={episode.episode_id ?? episode.id ?? index} className="grid grid-cols-[2rem_1fr] gap-3 py-5 sm:grid-cols-[2rem_10rem_1fr] sm:items-center">
+                  <div key={episode.episode_id ?? episode.id ?? index} data-episode-row className="grid grid-cols-[2rem_1fr] gap-3 py-5 sm:grid-cols-[2rem_10rem_1fr] sm:items-center">
                     <span className="text-xl font-bold">{episode.episode_number ?? episode.episode ?? index + 1}</span>
-                    {episode.thumbnail_url && (
-                      <div className="relative hidden aspect-video overflow-hidden rounded sm:block">
-                        <Image src={artworkUrl(episode.thumbnail_url)} alt="" fill className="object-cover" unoptimized />
-                      </div>
-                    )}
-                    <div>
-                      <div className="flex items-center justify-between gap-3"><h4 className="font-bold">{episode.title}</h4><span className="text-sm">{durationLabel(episode.duration)}</span></div>
+                    <div data-episode-thumbnail className="relative hidden aspect-video overflow-hidden rounded bg-zinc-800 sm:block">
+                      {episode.thumbnail_url ? <Image src={artworkUrl(episode.thumbnail_url)} alt="" fill className="object-cover" unoptimized /> : <span className="absolute inset-0 flex items-center justify-center px-3 text-center text-xs font-semibold text-zinc-500">No episode artwork</span>}
+                    </div>
+                    <div data-episode-content className="min-w-0">
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"><h4 className="font-bold sm:truncate">{episode.title}</h4><span className="whitespace-nowrap text-sm">{durationLabel(episode.duration)}</span></div>
                       <p className="mt-2 text-sm text-gray-300">{episode.description}</p>
                       {!episodePlayable && <p className="mt-2 text-xs font-semibold text-amber-400">This episode is still processing.</p>}
                       {episodePlayable && <Link href={watchHref(episode.asset_id as string, { kind: "episode", id: episode.episode_id ?? episode.id, title: episode.title })} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded bg-white px-4 py-2 text-sm font-bold text-black"><Play size={17} fill="currentColor" /> Play episode</Link>}
