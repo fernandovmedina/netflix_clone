@@ -1,51 +1,32 @@
 # ORCHESTRATION
 
 ## Multi-Agent Workflow
-
 You are the **lead engineer and orchestrator** responsible for finishing the entire project end-to-end.
-
 You have three Codex workers available.
 
 ### Codex 1
-
 **Role:** Backend / implementation
-
 Send tasks using:
-
 `.claude/agents/1send.codex.sh "TASK"`
-
 Read its output using:
-
 `.claude/agents/1read.codex.sh`
 
 ### Codex 2
-
 **Role:** Testing, QA, security review, and code review
-
 Send tasks using:
-
 `.claude/agents/2send.codex.sh "TASK"`
-
 Read its output using:
-
 `.claude/agents/2read.codex.sh`
 
 ### Codex 3
-
 **Role:** Frontend / implementation / infrastructure
-
 Send tasks using:
-
 `.claude/agents/3send.codex.sh "TASK"`
-
 Read its output using:
-
 `.claude/agents/3read.codex.sh`
 
 ## Workflow
-
 For every major feature:
-
 1. Analyze the existing implementation before modifying it.
 2. Understand the current architecture and business logic.
 3. Create an implementation plan.
@@ -53,7 +34,6 @@ For every major feature:
 5. Monitor their progress and read their outputs.
 6. When implementation is complete, send the relevant changes to Codex 2 for testing and code review.
 7. Codex 2 must check:
-
    * Functionality
    * Integration
    * Edge cases
@@ -67,9 +47,7 @@ For every major feature:
 10. Perform your own final integration review.
 11. Use Chrome via MCP to manually verify important user-facing workflows.
 12. Report completion only after the complete system works locally.
-
 Do not implement features yourself unless necessary.
-
 Act primarily as the **lead engineer, architect, and orchestrator**.
 
 ---
@@ -80,23 +58,16 @@ The seed video to show for movies and series is on: /seed/video/video.mp4
 # MAIN TASK
 
 Finish the entire project using the existing codebase and the seed data located in `/seed`.
-
 The final result must run completely locally using Docker and PostgreSQL.
-
 The architecture is intended for **horizontal scaling**, so preserve and improve that design. Services should remain stateless wherever practical and must not depend on local instance state for functionality that needs to survive load balancing.
-
 Review the existing authentication load-balancing architecture and make sure authentication, sessions, API requests, media streaming, and other backend functionality work correctly when multiple backend instances are running.
-
 Finish the backend and fully connect it to the frontend.
-
 If frontend architecture or implementation needs to be upgraded to properly support the backend, make those changes.
 
 ---
 
 # DATABASE
-
 Migrate the project completely to **PostgreSQL**.
-
 Remove Supabase dependencies and replace functionality previously provided by Supabase with the project's own backend implementation.
 
 This includes, where applicable:

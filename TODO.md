@@ -1,1 +1,6 @@
-- Check auth workflow []
+# ROLE
+# MAIN TASK
+# WHAT TO DO
+# WHAT NOT TO DO
+# REFERENCES
+# FEEDBACK
